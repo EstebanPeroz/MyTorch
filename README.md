@@ -48,6 +48,7 @@ Warnings are errors (`.cargo/config.toml`).
 ```sh
 cargo vendor          # updates Cargo.lock and vendor/
 git add Cargo.toml Cargo.lock vendor
+git commit --author "Yohann Boniface <edhyjox@gmail.com>" -m "..."
 ```
 
 A hook blocks the commit if `vendor/` is out of date.
