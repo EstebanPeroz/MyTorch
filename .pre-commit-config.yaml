@@ -1,0 +1,53 @@
+# Install: pre-commit install
+# Run on everything: pre-commit run --all-files
+default_install_hook_types: [pre-commit, commit-msg]
+default_stages: [pre-commit]
+
+exclude: ^vendor/
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+
+  - repo: local
+    hooks:
+      - id: cargo-clippy-fix
+        name: cargo clippy --fix
+        entry: cargo clippy --fix --all-targets --frozen --allow-dirty --allow-staged
+        language: system
+        files: (\.rs|Cargo\.(toml|lock))$
+        pass_filenames: false
+
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --all
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-vendor
+        name: cargo vendor is up to date
+        entry: >-
+          bash -c 'cargo vendor --locked --quiet > /dev/null
+          && git diff --quiet -- vendor
+          && test -z "$(git ls-files --others --exclude-standard -- vendor)"
+          || { echo "vendor/ is out of date: run cargo vendor, then git add vendor"; exit 1; }'
+        language: system
+        files: ^Cargo\.(toml|lock)$
+        pass_filenames: false
+
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args: []
