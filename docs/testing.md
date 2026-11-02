@@ -49,6 +49,10 @@ fn invalid_arguments_exit_with_84() {
 
 When a check fails, the message shows the command, the exit code, stdout and stderr.
 
+Input files for these tests live in `crates/<program>/tests/fixtures/` (for example a valid CHESSFILE, one
+with an unknown label, an empty one). Cargo runs the tests from the crate's folder, so the tests refer to
+them as `tests/fixtures/…`.
+
 The help text lives in `src/help.txt` and is read with `include_str!` by both the program and its test, so it
 exists only once.
 

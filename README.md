@@ -4,8 +4,9 @@ A neural network library written from scratch in Rust, and `my_torch_analyzer`, 
 predict the state of a chess game (check, checkmate, stalemate or nothing) from a chessboard in
 [FEN](https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation) notation.
 
-> **Status:** command-line parsing and labels are done. Training, prediction and network generation are not
-> implemented yet: those commands currently print `error: … is not implemented yet` and exit with 84.
+> **Status:** command-line parsing, labels and CHESSFILE reading are done. Training, prediction and network
+> generation are not implemented yet: those commands currently print `error: … is not implemented yet` and
+> exit with 84.
 
 ## Requirements
 
@@ -67,6 +68,10 @@ rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 Nothing
 
 The possible outputs are `Nothing`, `Check White`, `Check Black`, `Checkmate White`, `Checkmate Black` and
 `Stalemate`. The color is the attacking side. See [docs/labels.md](docs/labels.md).
+
+Labels are required with `--train` and optional with `--predict`. Blank lines are skipped, and any error
+points at the line, e.g. `error: boards.txt:12: unknown label 'Chek'`. See
+[docs/chess-file.md](docs/chess-file.md).
 
 ### my_torch_generator
 

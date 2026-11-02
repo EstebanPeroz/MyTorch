@@ -22,7 +22,7 @@ The repository is a Cargo workspace. Every crate lives in `crates/`.
 |---|---|---|---|
 | `my_torch` | library | The neural network: creating, training, saving and loading networks. Knows nothing about chess. | none |
 | `cli_core` | library | The `Cli` trait and `run`, shared by both programs: argument parsing, `--help`, error printing, exit code 84. | `clap` |
-| `my_torch_analyzer` | library + binary | The chess analyzer. The library part holds the chess logic (`label`); the binary part (`main`, `cli`, `modes`) only wires it together. | `clap`, `chess_fen_parser` |
+| `my_torch_analyzer` | library + binary | The chess analyzer. The library part holds the chess logic (`color`, `label`, `board`, `sample`, `chess_file`); the binary part (`main`, `cli`, `modes`) only wires it together. | `clap`, `chess_fen_parser` |
 | `my_torch_generator` | binary | Generates blank networks from configuration files. | `clap` |
 | `cli_test` | library, dev-only | Runs a program in end-to-end tests and checks its exit code, stdout and stderr. Never compiled into the programs. See [testing.md](testing.md). | none |
 
@@ -74,6 +74,7 @@ bug that valid or invalid input can never trigger (for example `Label::index` on
 | Command line of both programs | done, see [cli.md](cli.md) |
 | End-to-end tests in CI | done, see [testing.md](testing.md) |
 | Labels | done, see [labels.md](labels.md) |
-| CHESSFILE reader | not started |
+| CHESSFILE reader | done, see [chess-file.md](chess-file.md) |
 | Neural network (`my_torch`) | not started |
-| `--train`, `--predict`, network generation | not implemented: they return an error and exit with 84 |
+| `--train`, `--predict` | read the CHESSFILE, then return a "not implemented" error (exit 84) |
+| Network generation | not implemented: returns an error and exits with 84 |
