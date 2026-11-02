@@ -3,7 +3,8 @@
 A **label** is the expected answer for a chessboard: the state of the game the network has to predict. The
 network is trained with supervised learning, so every training example is a chessboard together with its label.
 
-The code is in `crates/my_torch_analyzer/src/label.rs`.
+The code is in `crates/my_torch_analyzer/src/label.rs`. `Color` lives in `color.rs`, because `Board` uses it
+too (see [chess-file.md](chess-file.md)).
 
 ## Classes
 
@@ -37,8 +38,8 @@ color when there is one. Parsing is strict: `Check` without a color, `check Whit
 ## API
 
 ```rust
-pub enum Color { White, Black }
-pub enum Label { Nothing, Check(Color), Checkmate(Color), Stalemate }
+pub enum Color { White, Black }                                        // color.rs
+pub enum Label { Nothing, Check(Color), Checkmate(Color), Stalemate }  // label.rs
 ```
 
 | Item | Role |
