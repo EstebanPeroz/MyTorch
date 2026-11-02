@@ -1,9 +1,10 @@
-use std::path::PathBuf;
-use std::process;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 
+use clap::error::ErrorKind;
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command};
 
-const HELP: &str = "USAGE
+pub const HELP: &str = "USAGE
         ./my_torch_analyzer [--predict | --train [--save SAVEFILE]] LOADFILE CHESSFILE
 
 DESCRIPTION
@@ -23,23 +24,42 @@ contain inputs to send to the neural network in FEN notation, and optionally an 
 
 pub enum Mode {
     Predict,
-    Train { save_file: Option<PathBuf> },
+    Train { save_file: PathBuf },
 }
 
 pub struct Args {
-    pub mode: Mode,
-    pub load_file: PathBuf,
-    pub chess_file: PathBuf,
+    mode: Mode,
+    load_file: PathBuf,
+    chess_file: PathBuf,
 }
 
 impl Args {
-    pub fn parse() -> Self {
-        let matches = Self::command().try_get_matches().unwrap_or_else(|error| {
-            let code = if error.use_stderr() { 84 } else { 0 };
-            let _ = error.print();
-            process::exit(code);
-        });
-        Self::from_matches(&matches)
+    pub fn try_parse() -> Result<Option<Self>, String> {
+        Self::try_parse_from(std::env::args_os())
+    }
+
+    pub fn mode(&self) -> &Mode {
+        &self.mode
+    }
+
+    pub fn load_file(&self) -> &Path {
+        &self.load_file
+    }
+
+    pub fn chess_file(&self) -> &Path {
+        &self.chess_file
+    }
+
+    fn try_parse_from<I, T>(args: I) -> Result<Option<Self>, String>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<OsString> + Clone,
+    {
+        match Self::command().try_get_matches_from(args) {
+            Ok(matches) => Ok(Some(Self::from_matches(&matches))),
+            Err(error) if error.kind() == ErrorKind::DisplayHelp => Ok(None),
+            Err(error) => Err(error.render().to_string().trim_end().to_string()),
+        }
     }
 
     fn command() -> Command {
@@ -76,17 +96,22 @@ impl Args {
     }
 
     fn from_matches(matches: &ArgMatches) -> Self {
+        let load_file = matches.get_one::<PathBuf>("LOADFILE").unwrap().clone();
+        let chess_file = matches.get_one::<PathBuf>("CHESSFILE").unwrap().clone();
         let mode = if matches.get_flag("train") {
             Mode::Train {
-                save_file: matches.get_one::<PathBuf>("save").cloned(),
+                save_file: matches
+                    .get_one::<PathBuf>("save")
+                    .cloned()
+                    .unwrap_or_else(|| load_file.clone()),
             }
         } else {
             Mode::Predict
         };
         Args {
             mode,
-            load_file: matches.get_one::<PathBuf>("LOADFILE").unwrap().clone(),
-            chess_file: matches.get_one::<PathBuf>("CHESSFILE").unwrap().clone(),
+            load_file,
+            chess_file,
         }
     }
 }
@@ -94,31 +119,44 @@ impl Args {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
 
-    fn parse(args: &[&str]) -> Result<Args, clap::Error> {
-        Args::command()
-            .try_get_matches_from(std::iter::once("my_torch_analyzer").chain(args.iter().copied()))
-            .map(|matches| Args::from_matches(&matches))
+    fn parse(args: &[&str]) -> Result<Option<Args>, String> {
+        Args::try_parse_from(std::iter::once("my_torch_analyzer").chain(args.iter().copied()))
+    }
+
+    fn train_save_file(args: &Args) -> Option<&Path> {
+        match args.mode() {
+            Mode::Train { save_file } => Some(save_file),
+            Mode::Predict => None,
+        }
     }
 
     #[test]
     fn parses_predict_mode() {
-        let args = parse(&["--predict", "net.nn", "boards.txt"]).unwrap();
-        assert!(matches!(args.mode, Mode::Predict));
-        assert_eq!(args.load_file, PathBuf::from("net.nn"));
-        assert_eq!(args.chess_file, PathBuf::from("boards.txt"));
+        let args = parse(&["--predict", "net.nn", "boards.txt"])
+            .unwrap()
+            .unwrap();
+        assert!(matches!(args.mode(), Mode::Predict));
+        assert_eq!(args.load_file(), Path::new("net.nn"));
+        assert_eq!(args.chess_file(), Path::new("boards.txt"));
     }
 
     #[test]
-    fn parses_train_mode_with_and_without_save() {
-        let args = parse(&["--train", "net.nn", "boards.txt"]).unwrap();
-        assert!(matches!(args.mode, Mode::Train { save_file: None }));
+    fn train_mode_saves_into_load_file_by_default() {
+        let args = parse(&["--train", "net.nn", "boards.txt"])
+            .unwrap()
+            .unwrap();
+        assert_eq!(train_save_file(&args), Some(Path::new("net.nn")));
 
-        let args = parse(&["--train", "--save", "out.nn", "net.nn", "boards.txt"]).unwrap();
-        assert!(
-            matches!(args.mode, Mode::Train { save_file: Some(path) } if path == Path::new("out.nn"))
-        );
+        let args = parse(&["--train", "--save", "out.nn", "net.nn", "boards.txt"])
+            .unwrap()
+            .unwrap();
+        assert_eq!(train_save_file(&args), Some(Path::new("out.nn")));
+    }
+
+    #[test]
+    fn help_is_not_an_error() {
+        assert!(matches!(parse(&["--help"]), Ok(None)));
     }
 
     #[test]
