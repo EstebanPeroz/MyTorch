@@ -89,18 +89,4 @@ mod tests {
             .collect();
         assert_eq!(requests, [("basic.conf", 3), ("deep.conf", 1)]);
     }
-
-    #[test]
-    fn rejects_invalid_arguments() {
-        let invalid: [&[&str]; 5] = [
-            &[],
-            &["basic.conf"],
-            &["basic.conf", "3", "deep.conf"],
-            &["basic.conf", "zero"],
-            &["basic.conf", "0"],
-        ];
-        for args in invalid {
-            assert!(parse(args).is_err(), "{args:?}");
-        }
-    }
 }

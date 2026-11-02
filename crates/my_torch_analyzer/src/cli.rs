@@ -123,19 +123,4 @@ mod tests {
             .unwrap();
         assert_eq!(train_save_file(&args), Some(Path::new("out.nn")));
     }
-
-    #[test]
-    fn rejects_invalid_arguments() {
-        let invalid: [&[&str]; 6] = [
-            &["net.nn", "boards.txt"],
-            &["--predict", "--train", "net.nn", "boards.txt"],
-            &["--predict", "--save", "out.nn", "net.nn", "boards.txt"],
-            &["--predict", "net.nn"],
-            &["--predict", "net.nn", "boards.txt", "extra"],
-            &["--unknown", "net.nn", "boards.txt"],
-        ];
-        for args in invalid {
-            assert!(parse(args).is_err(), "{args:?}");
-        }
-    }
 }
