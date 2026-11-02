@@ -1,9 +1,11 @@
+use std::ops::Range;
 use std::str::FromStr;
 
 use crate::board::Board;
 use crate::label::Label;
 
 const FEN_FIELDS: usize = 6;
+const COUNTERS: Range<usize> = 4..FEN_FIELDS;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Sample {
@@ -19,6 +21,10 @@ impl Sample {
     pub fn label(&self) -> Option<Label> {
         self.label
     }
+
+    fn is_counter(word: &str) -> bool {
+        !word.is_empty() && word.bytes().all(|byte| byte.is_ascii_digit())
+    }
 }
 
 impl FromStr for Sample {
@@ -26,11 +32,19 @@ impl FromStr for Sample {
 
     fn from_str(line: &str) -> Result<Self, Self::Err> {
         let words: Vec<&str> = line.split_whitespace().collect();
-        if words.len() < FEN_FIELDS {
+        if words.len() < COUNTERS.start {
             return Err(format!(
                 "expected a FEN with {FEN_FIELDS} fields, found {}",
                 words.len()
             ));
+        }
+        let has_counters = words
+            .get(COUNTERS)
+            .is_some_and(|counters| counters.iter().all(|word| Sample::is_counter(word)));
+        if !has_counters {
+            return Err(
+                "expected halfmove and fullmove counters after the en passant field".into(),
+            );
         }
         let (fen, label) = words.split_at(FEN_FIELDS);
         let board = Board::from_fen(&fen.join(" "))?;
@@ -47,6 +61,9 @@ mod tests {
     use super::*;
     use crate::color::Color;
     use crate::test_fens::START;
+
+    const COUNTERS_MISSING: &str =
+        "expected halfmove and fullmove counters after the en passant field";
 
     fn parse(line: &str) -> Result<Sample, String> {
         line.parse()
@@ -85,8 +102,21 @@ mod tests {
         let cases = [
             ("", "expected a FEN with 6 fields, found 0".to_string()),
             (
-                "8/8/8/8/8/8/8/k1K5 w - -",
-                "expected a FEN with 6 fields, found 4".to_string(),
+                "8/8/8/8/8/8/8/k1K5 w",
+                "expected a FEN with 6 fields, found 2".to_string(),
+            ),
+            ("8/8/8/8/8/8/8/k1K5 w - -", COUNTERS_MISSING.to_string()),
+            (
+                "8/8/8/8/8/8/8/k1K5 w - - Nothing",
+                COUNTERS_MISSING.to_string(),
+            ),
+            (
+                "8/8/8/8/8/8/8/k1K5 w - - Check White",
+                COUNTERS_MISSING.to_string(),
+            ),
+            (
+                "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 Nothing",
+                COUNTERS_MISSING.to_string(),
             ),
             (&format!("{START} Chek"), "unknown label 'Chek'".to_string()),
             (
@@ -94,9 +124,8 @@ mod tests {
                 "unknown label 'Check Whit'".to_string(),
             ),
             (
-                "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 Nothing",
-                "invalid FEN 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 Nothing'"
-                    .to_string(),
+                "8/8/8/8/8/8/8/8 x - - 0 1 Nothing",
+                "invalid FEN '8/8/8/8/8/8/8/8 x - - 0 1'".to_string(),
             ),
         ];
         for (line, message) in cases {
