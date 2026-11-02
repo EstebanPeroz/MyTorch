@@ -1,5 +1,4 @@
 mod color;
-mod index;
 mod label;
 mod text;
 
