@@ -3,27 +3,15 @@ mod cli;
 use std::path::Path;
 use std::process::ExitCode;
 
-use cli::{Args, HELP};
+use cli::Args;
 
 fn main() -> ExitCode {
-    match run() {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(message) => {
-            eprintln!("{message}");
-            ExitCode::from(84)
+    cli_core::run(|args: Args| {
+        for request in args.requests() {
+            generate(request.config_file(), request.count())?;
         }
-    }
-}
-
-fn run() -> Result<(), String> {
-    let Some(args) = Args::try_parse()? else {
-        print!("{HELP}");
-        return Ok(());
-    };
-    for request in args.requests() {
-        generate(request.config_file(), request.count())?;
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 fn generate(_config_file: &Path, _count: usize) -> Result<(), String> {

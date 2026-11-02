@@ -1,10 +1,9 @@
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use clap::error::ErrorKind;
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command};
+use cli_core::Cli;
 
-pub const HELP: &str = "USAGE
+const HELP: &str = "USAGE
         ./my_torch_analyzer [--predict | --train [--save SAVEFILE]] LOADFILE CHESSFILE
 
 DESCRIPTION
@@ -34,10 +33,6 @@ pub struct Args {
 }
 
 impl Args {
-    pub fn try_parse() -> Result<Option<Self>, String> {
-        Self::try_parse_from(std::env::args_os())
-    }
-
     pub fn mode(&self) -> &Mode {
         &self.mode
     }
@@ -49,22 +44,13 @@ impl Args {
     pub fn chess_file(&self) -> &Path {
         &self.chess_file
     }
+}
 
-    fn try_parse_from<I, T>(args: I) -> Result<Option<Self>, String>
-    where
-        I: IntoIterator<Item = T>,
-        T: Into<OsString> + Clone,
-    {
-        match Self::command().try_get_matches_from(args) {
-            Ok(matches) => Ok(Some(Self::from_matches(&matches))),
-            Err(error) if error.kind() == ErrorKind::DisplayHelp => Ok(None),
-            Err(error) => Err(error.render().to_string().trim_end().to_string()),
-        }
-    }
+impl Cli for Args {
+    const HELP: &'static str = HELP;
 
     fn command() -> Command {
         Command::new("my_torch_analyzer")
-            .override_help(HELP)
             .arg(
                 Arg::new("predict")
                     .long("predict")
@@ -95,7 +81,7 @@ impl Args {
             )
     }
 
-    fn from_matches(matches: &ArgMatches) -> Self {
+    fn from_matches(matches: &ArgMatches) -> Result<Self, String> {
         let load_file = matches.get_one::<PathBuf>("LOADFILE").unwrap().clone();
         let chess_file = matches.get_one::<PathBuf>("CHESSFILE").unwrap().clone();
         let mode = if matches.get_flag("train") {
@@ -108,11 +94,11 @@ impl Args {
         } else {
             Mode::Predict
         };
-        Args {
+        Ok(Args {
             mode,
             load_file,
             chess_file,
-        }
+        })
     }
 }
 
@@ -152,11 +138,6 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(train_save_file(&args), Some(Path::new("out.nn")));
-    }
-
-    #[test]
-    fn help_is_not_an_error() {
-        assert!(matches!(parse(&["--help"]), Ok(None)));
     }
 
     #[test]

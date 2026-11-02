@@ -1,10 +1,9 @@
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use clap::error::ErrorKind;
 use clap::{Arg, ArgMatches, Command};
+use cli_core::Cli;
 
-pub const HELP: &str = "USAGE
+const HELP: &str = "USAGE
         ./my_torch_generator config_file_1 nb_1 [config_file_2 nb_2...]
 
 DESCRIPTION
@@ -45,28 +44,16 @@ pub struct Args {
 }
 
 impl Args {
-    pub fn try_parse() -> Result<Option<Self>, String> {
-        Self::try_parse_from(std::env::args_os())
-    }
-
     pub fn requests(&self) -> &[NetworkRequest] {
         &self.requests
     }
+}
 
-    fn try_parse_from<I, T>(args: I) -> Result<Option<Self>, String>
-    where
-        I: IntoIterator<Item = T>,
-        T: Into<OsString> + Clone,
-    {
-        match Self::command().try_get_matches_from(args) {
-            Ok(matches) => Self::from_matches(&matches).map(Some),
-            Err(error) if error.kind() == ErrorKind::DisplayHelp => Ok(None),
-            Err(error) => Err(error.render().to_string().trim_end().to_string()),
-        }
-    }
+impl Cli for Args {
+    const HELP: &'static str = HELP;
 
     fn command() -> Command {
-        Command::new("my_torch_generator").override_help(HELP).arg(
+        Command::new("my_torch_generator").arg(
             Arg::new("PAIRS")
                 .value_name("config_file nb")
                 .num_args(2..)
@@ -108,11 +95,6 @@ mod tests {
             .map(|request| (request.config_file().to_str().unwrap(), request.count()))
             .collect();
         assert_eq!(requests, [("basic.conf", 3), ("deep.conf", 1)]);
-    }
-
-    #[test]
-    fn help_is_not_an_error() {
-        assert!(matches!(parse(&["--help"]), Ok(None)));
     }
 
     #[test]
