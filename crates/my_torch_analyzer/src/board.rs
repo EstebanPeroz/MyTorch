@@ -118,24 +118,36 @@ mod tests {
     }
 
     #[test]
-    fn places_pieces_from_a1_to_h8() {
+    fn places_every_piece_of_the_start_position() {
         let board = Board::from_fen(START).unwrap();
-        let white_rook = Some(Piece::new(PieceKind::Rook, Color::White));
-        let black_rook = Some(Piece::new(PieceKind::Rook, Color::Black));
-        assert_eq!(piece_at(&board, "a1"), white_rook);
-        assert_eq!(piece_at(&board, "h8"), black_rook);
+        let back_rank = [
+            PieceKind::Rook,
+            PieceKind::Knight,
+            PieceKind::Bishop,
+            PieceKind::Queen,
+            PieceKind::King,
+            PieceKind::Bishop,
+            PieceKind::Knight,
+            PieceKind::Rook,
+        ];
+        for (file, kind) in back_rank.into_iter().enumerate() {
+            let expected = [
+                Some(Piece::new(kind, Color::White)),
+                Some(Piece::new(PieceKind::Pawn, Color::White)),
+                None,
+                None,
+                None,
+                None,
+                Some(Piece::new(PieceKind::Pawn, Color::Black)),
+                Some(Piece::new(kind, Color::Black)),
+            ];
+            for (rank, piece) in expected.into_iter().enumerate() {
+                let square = board.squares()[Board::square_index(file, rank)];
+                assert_eq!(square, piece, "file {file}, rank {rank}");
+            }
+        }
         assert_eq!(Board::square_index(0, 0), 0);
         assert_eq!(Board::square_index(7, 7), Board::SQUARES - 1);
-        assert_eq!(
-            piece_at(&board, "e1"),
-            Some(Piece::new(PieceKind::King, Color::White))
-        );
-        assert_eq!(
-            piece_at(&board, "e8"),
-            Some(Piece::new(PieceKind::King, Color::Black))
-        );
-        assert_eq!(piece_at(&board, "d4"), None);
-        assert_eq!(board.squares().iter().flatten().count(), 32);
     }
 
     #[test]
