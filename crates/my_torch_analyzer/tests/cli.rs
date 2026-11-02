@@ -1,6 +1,8 @@
 use cli_test::Program;
 
 const HELP: &str = include_str!("../src/help.txt");
+const LABELED: &str = "tests/fixtures/labeled.txt";
+const UNLABELED: &str = "tests/fixtures/unlabeled.txt";
 
 fn analyzer() -> Program {
     Program::new(env!("CARGO_BIN_EXE_my_torch_analyzer"))
@@ -54,15 +56,19 @@ fn invalid_arguments_exit_with_84() {
 fn valid_arguments_reach_the_selected_mode() {
     analyzer().assert_errors(&[
         (
-            &["--predict", "net.nn", "boards.txt"],
+            &["--predict", "net.nn", LABELED],
             "--predict is not implemented yet",
         ),
         (
-            &["--train", "net.nn", "boards.txt"],
+            &["--predict", "net.nn", UNLABELED],
+            "--predict is not implemented yet",
+        ),
+        (
+            &["--train", "net.nn", LABELED],
             "--train is not implemented yet",
         ),
         (
-            &["--save", "out.nn", "--train", "net.nn", "boards.txt"],
+            &["--save", "out.nn", "--train", "net.nn", LABELED],
             "--train is not implemented yet",
         ),
     ]);
