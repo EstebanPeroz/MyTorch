@@ -8,6 +8,6 @@ edition = "2024"
 
 [workspace.dependencies]
 clap = "4.6.7"
-fen = "0.1.0"
+chess_fen_parser = "0.1.1"
 my_torch = { path = "crates/my_torch" }
 cli_core = { path = "crates/cli_core" }

@@ -1,0 +1,86 @@
+/// `piece` — a single piece character.
+/// Allowed: p,r,n,b,q,k (black) or P,R,N,B,Q,K (white).
+/// Examples: r, N
+piece = { "p" | "r" | "n" | "b" | "q" | "k" | "P" | "R" | "N" | "B" | "Q" | "K" }
+
+/// `active_color` — which side is to move.
+/// `w` for White, `b` for Black.
+active_color = { "w" | "b" }
+
+/// `castling` — castling availability field.
+/// Either `-` (no castling rights) or one or more of K, Q, k, q.
+/// K = White king-side, Q = White queen-side, k = Black king-side, q = Black queen-side.
+castling = { "-" | ("K" | "Q" | "k" | "q")+ }
+
+/// `rank_digit` — number of consecutive empty squares in a rank.
+/// A single character '1'..'8'.
+rank_digit = { '1'..'8' }
+
+/// `rank` — one board rank (row).
+/// A sequence of `piece` and/or `rank_digit` tokens that expands to exactly 8 squares.
+/// Examples: rnbqkbnr, pppppppp, 8, 3k4
+rank = { ( piece | rank_digit )+ }
+
+/// `piece_placement` — full board placement: eight ranks separated by '/'.
+/// Example: rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR
+piece_placement = { rank ~ ("/" ~ rank){7} }
+
+/// `square` — algebraic square coordinate (file + rank).
+/// file: a..h, rank: 1..8.
+/// Example: e4
+square = { 'a'..'h' ~ rank_digit }
+
+/// `en_passant` — en-passant target square or '-'.
+/// Either '-' or a `square` (e.g. e3).
+en_passant = { "-" | square }
+
+/// `halfmove` — halfmove clock: number of halfmoves since last capture or pawn move.
+halfmove = @{ ASCII_DIGIT+ }
+
+/// `fullmove` — fullmove number: incremented after Black's move.
+fullmove = @{ ASCII_DIGIT+ }
+
+/// `[Event "World Blitz Championship"]`
+event_tag = { "[Event" ~ " \"" ~ (!"\"" ~ ANY)* ~ "\"]" }
+
+/// `[White "Magnus Carlsen"]`
+white_tag = { "[White" ~ " \"" ~ (!"\"" ~ ANY)* ~ "\"]" }
+
+/// `[Black "Ian Nepomniachtchi"]`
+black_tag = { "[Black" ~ " \"" ~ (!"\"" ~ ANY)* ~ "\"]" }
+
+/// `comment` — textual comment enclosed in curly braces `{}`.
+/// Comments can appear after the FEN string.
+/// Example: {This position is from round 3}
+comment = { "{" ~ (!"}" ~ ANY)* ~ "}" }
+
+/// `fen_core` — the core FEN record:
+/// piece placement, active color, castling rights,
+/// en-passant target, halfmove clock, and fullmove number.
+/// Example full FEN:
+/// r1bqkbnr/pppppppp/2n5/8/8/2N5/PPPPPPPP/R1BQKBNR w KQkq - 0 1
+fen_core = {
+    piece_placement ~ " "
+    ~ active_color ~ " "
+    ~ castling ~ " "
+    ~ en_passant ~ " "
+    ~ halfmove ~ " "
+    ~ fullmove
+}
+
+/// `fen_record` — the complete record including optional PGN-like tags and a comment.
+/// Example:
+/// [Event "World Blitz Championship"]
+/// [White "Magnus Carlsen"]
+/// [Black "Ian Nepomniachtchi"]
+/// rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
+/// {Starting position of the match}
+fen_record = {
+    SOI
+    ~ event_tag? ~ NEWLINE*
+    ~ white_tag? ~ NEWLINE*
+    ~ black_tag? ~ NEWLINE*
+    ~ fen_core
+    ~ (NEWLINE* ~ comment)?
+    ~ EOI
+}
