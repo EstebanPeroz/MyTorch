@@ -6,4 +6,5 @@ edition.workspace = true
 [dependencies]
 clap.workspace = true
 cli_core.workspace = true
+fen.workspace = true
 my_torch.workspace = true
