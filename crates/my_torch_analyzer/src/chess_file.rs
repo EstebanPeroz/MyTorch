@@ -4,6 +4,8 @@ use std::path::Path;
 
 use crate::sample::Sample;
 
+const BYTE_ORDER_MARK: char = '\u{feff}';
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Labels {
     Required,
@@ -34,8 +36,12 @@ impl ChessFile {
                 ErrorKind::InvalidData => located(error.to_string()),
                 _ => ChessFile::unreadable(name, &error),
             })?;
+            let line = match index {
+                0 => line.strip_prefix(BYTE_ORDER_MARK).unwrap_or(&line),
+                _ => &line,
+            };
             if !line.trim().is_empty() {
-                samples.push(ChessFile::parse_line(&line, labels).map_err(located)?);
+                samples.push(ChessFile::parse_line(line, labels).map_err(located)?);
             }
         }
         if samples.is_empty() {
@@ -93,6 +99,18 @@ mod tests {
             parse(&content, Labels::Optional),
             Err("error: boards.txt:4: unknown label 'Chek'".to_string())
         );
+    }
+
+    #[test]
+    fn ignores_a_byte_order_mark_at_the_start() {
+        let content = format!("{BYTE_ORDER_MARK}{START} Nothing\n{START} Check White\n");
+        let file = parse(&content, Labels::Required).unwrap();
+        assert_eq!(
+            labels_of(&file),
+            [Some(Label::Nothing), Some(Label::Check(Color::White))]
+        );
+        let content = format!("{START} Nothing\n{BYTE_ORDER_MARK}{START} Nothing\n");
+        assert!(parse(&content, Labels::Optional).is_err());
     }
 
     #[test]
