@@ -31,4 +31,5 @@ jobs:
           make
           ./$BINARY --help
 
-      - run: cargo test --frozen
+      - name: Unit and end-to-end tests
+        run: cargo test --frozen --workspace
