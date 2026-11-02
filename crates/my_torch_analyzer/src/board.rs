@@ -1,0 +1,187 @@
+use chess_fen_parser::{FenError, FenRecord};
+
+use crate::color::Color;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PieceKind {
+    Pawn,
+    Knight,
+    Bishop,
+    Rook,
+    Queen,
+    King,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Piece {
+    kind: PieceKind,
+    color: Color,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Board {
+    squares: [Option<Piece>; Board::SQUARES],
+    side_to_move: Color,
+}
+
+impl Piece {
+    pub fn new(kind: PieceKind, color: Color) -> Self {
+        Piece { kind, color }
+    }
+
+    pub fn kind(self) -> PieceKind {
+        self.kind
+    }
+
+    pub fn color(self) -> Color {
+        self.color
+    }
+}
+
+impl Board {
+    pub const SIZE: usize = 8;
+    pub const SQUARES: usize = Board::SIZE * Board::SIZE;
+
+    pub fn from_fen(fen: &str) -> Result<Self, String> {
+        chess_fen_parser::parse_fen(fen)
+            .map(|record| Board::from_record(&record))
+            .map_err(|error| Board::describe(fen, error))
+    }
+
+    pub fn squares(&self) -> &[Option<Piece>; Board::SQUARES] {
+        &self.squares
+    }
+
+    pub fn side_to_move(&self) -> Color {
+        self.side_to_move
+    }
+
+    fn from_record(record: &FenRecord) -> Self {
+        let mut squares = [None; Board::SQUARES];
+        for (row, rank) in record.board.iter().enumerate() {
+            for (file, square) in rank.iter().enumerate() {
+                squares[(Board::SIZE - 1 - row) * Board::SIZE + file] =
+                    square.as_ref().map(Piece::from);
+            }
+        }
+        Board {
+            squares,
+            side_to_move: Color::from(&record.active_color),
+        }
+    }
+
+    fn describe(fen: &str, error: FenError) -> String {
+        match error {
+            FenError::ParseError(_) => format!("invalid FEN '{fen}'"),
+            error => format!("invalid FEN '{fen}': {error}"),
+        }
+    }
+}
+
+impl From<&chess_fen_parser::Piece> for Piece {
+    fn from(piece: &chess_fen_parser::Piece) -> Self {
+        let kind = match piece.kind {
+            chess_fen_parser::PieceKind::Pawn => PieceKind::Pawn,
+            chess_fen_parser::PieceKind::Knight => PieceKind::Knight,
+            chess_fen_parser::PieceKind::Bishop => PieceKind::Bishop,
+            chess_fen_parser::PieceKind::Rook => PieceKind::Rook,
+            chess_fen_parser::PieceKind::Queen => PieceKind::Queen,
+            chess_fen_parser::PieceKind::King => PieceKind::King,
+        };
+        Piece::new(kind, Color::from(&piece.color))
+    }
+}
+
+impl From<&chess_fen_parser::Color> for Color {
+    fn from(color: &chess_fen_parser::Color) -> Self {
+        match color {
+            chess_fen_parser::Color::White => Color::White,
+            chess_fen_parser::Color::Black => Color::Black,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const START: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    const FOOLS_MATE: &str = "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3";
+
+    fn piece_at(board: &Board, file: usize, rank: usize) -> Option<Piece> {
+        board.squares()[(rank - 1) * Board::SIZE + file]
+    }
+
+    #[test]
+    fn places_pieces_from_a1_to_h8() {
+        let board = Board::from_fen(START).unwrap();
+        let white_rook = Some(Piece::new(PieceKind::Rook, Color::White));
+        let black_rook = Some(Piece::new(PieceKind::Rook, Color::Black));
+        assert_eq!(board.squares()[0], white_rook);
+        assert_eq!(board.squares()[Board::SQUARES - 1], black_rook);
+        assert_eq!(
+            piece_at(&board, 4, 1),
+            Some(Piece::new(PieceKind::King, Color::White))
+        );
+        assert_eq!(
+            piece_at(&board, 4, 8),
+            Some(Piece::new(PieceKind::King, Color::Black))
+        );
+        assert_eq!(piece_at(&board, 3, 4), None);
+        assert_eq!(board.squares().iter().flatten().count(), 32);
+    }
+
+    #[test]
+    fn reads_a_mid_game_position() {
+        let board = Board::from_fen(FOOLS_MATE).unwrap();
+        assert_eq!(
+            piece_at(&board, 7, 4),
+            Some(Piece::new(PieceKind::Queen, Color::Black))
+        );
+        assert_eq!(piece_at(&board, 3, 8), None);
+        assert_eq!(board.side_to_move(), Color::White);
+    }
+
+    #[test]
+    fn reads_the_side_to_move() {
+        let board = Board::from_fen("8/8/8/8/8/8/8/k1K5 b - - 0 1").unwrap();
+        assert_eq!(board.side_to_move(), Color::Black);
+    }
+
+    #[test]
+    fn rejects_malformed_fens_with_one_line_messages() {
+        let cases = [
+            (
+                "rnbqkbnrr/8/8/8/8/8/8/8 w - - 0 1",
+                "invalid FEN 'rnbqkbnrr/8/8/8/8/8/8/8 w - - 0 1': invalid rank length: 9",
+            ),
+            (
+                "8/8/8/8/8/8/PPPPPPPPP/8 w - - 0 1",
+                "invalid FEN '8/8/8/8/8/8/PPPPPPPPP/8 w - - 0 1': invalid rank length: 9",
+            ),
+            (
+                "7/8/8/8/8/8/8/8 w - - 0 1",
+                "invalid FEN '7/8/8/8/8/8/8/8 w - - 0 1': invalid rank length: 7",
+            ),
+            (
+                "8/8/8/8/8/8/8/8 w - é 0 1",
+                "invalid FEN '8/8/8/8/8/8/8/8 w - é 0 1'",
+            ),
+            (
+                "8/8/8/8/8/8/8 w - - 0 1",
+                "invalid FEN '8/8/8/8/8/8/8 w - - 0 1'",
+            ),
+            (
+                "8/8/8/8/8/8/8/8 x - - 0 1",
+                "invalid FEN '8/8/8/8/8/8/8/8 x - - 0 1'",
+            ),
+            (
+                "8/8/8/8/8/8/8/8 w - - 0 70000",
+                "invalid FEN '8/8/8/8/8/8/8/8 w - - 0 70000': invalid number: number too large to fit in target type",
+            ),
+        ];
+        for (fen, message) in cases {
+            assert_eq!(Board::from_fen(fen), Err(message.to_string()), "{fen}");
+        }
+    }
+}
