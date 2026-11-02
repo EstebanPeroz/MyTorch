@@ -1,0 +1,5 @@
+[package]
+name = "cli_test"
+version.workspace = true
+edition.workspace = true
+publish = false

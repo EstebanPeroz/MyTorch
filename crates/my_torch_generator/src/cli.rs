@@ -3,14 +3,7 @@ use std::path::{Path, PathBuf};
 use clap::{Arg, ArgMatches, Command};
 use cli_core::Cli;
 
-const HELP: &str = "USAGE
-        ./my_torch_generator config_file_1 nb_1 [config_file_2 nb_2...]
-
-DESCRIPTION
-        config_file_i    Configuration file containing description of a neural network we want to
-generate.
-        nb_i             Number of neural networks to generate based on the configuration file.
-";
+const HELP: &str = include_str!("help.txt");
 
 pub struct NetworkRequest {
     config_file: PathBuf,

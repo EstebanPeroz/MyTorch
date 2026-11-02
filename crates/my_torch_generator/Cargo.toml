@@ -7,3 +7,6 @@ edition.workspace = true
 clap.workspace = true
 cli_core.workspace = true
 my_torch.workspace = true
+
+[dev-dependencies]
+cli_test.workspace = true

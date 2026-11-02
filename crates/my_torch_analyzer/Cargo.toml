@@ -8,3 +8,6 @@ clap.workspace = true
 cli_core.workspace = true
 chess_fen_parser.workspace = true
 my_torch.workspace = true
+
+[dev-dependencies]
+cli_test.workspace = true

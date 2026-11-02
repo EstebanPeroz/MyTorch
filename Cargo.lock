@@ -135,6 +135,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "cli_test"
+version = "0.1.0"
+
+[[package]]
 name = "colorchoice"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -181,6 +185,7 @@ dependencies = [
  "chess_fen_parser",
  "clap",
  "cli_core",
+ "cli_test",
  "my_torch",
 ]
 
@@ -190,6 +195,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "cli_core",
+ "cli_test",
  "my_torch",
 ]
 

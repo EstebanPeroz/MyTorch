@@ -3,23 +3,7 @@ use std::path::{Path, PathBuf};
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command};
 use cli_core::Cli;
 
-const HELP: &str = "USAGE
-        ./my_torch_analyzer [--predict | --train [--save SAVEFILE]] LOADFILE CHESSFILE
-
-DESCRIPTION
-        --train        Launch the neural network in training mode. Each chessboard in FILE must
-contain inputs to send to the neural network in FEN notation and the expected output separated by
-space. If specified, the newly trained neural network will be saved in SAVEFILE. Otherwise,
-it will be saved in the original LOADFILE.
-
-        --predict      Launch the neural network in prediction mode. Each chessboard in FILE must
-contain inputs to send to the neural network in FEN notation, and optionally an expected output.
-
-        --save         Save neural network into SAVEFILE. Only works in train mode.
-
-        LOADFILE       File containing an artificial neural network
-        CHESSFILE      File containing chessboards
-";
+const HELP: &str = include_str!("help.txt");
 
 pub enum Mode {
     Predict,
