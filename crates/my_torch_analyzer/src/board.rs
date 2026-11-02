@@ -48,6 +48,10 @@ impl Board {
             .map_err(|error| Board::describe(fen, error))
     }
 
+    pub const fn square_index(file: usize, rank: usize) -> usize {
+        rank * Board::SIZE + file
+    }
+
     pub fn squares(&self) -> &[Option<Piece>; Board::SQUARES] {
         &self.squares
     }
@@ -60,7 +64,7 @@ impl Board {
         let mut squares = [None; Board::SQUARES];
         for (row, rank) in record.board.iter().enumerate() {
             for (file, square) in rank.iter().enumerate() {
-                squares[(Board::SIZE - 1 - row) * Board::SIZE + file] =
+                squares[Board::square_index(file, Board::SIZE - 1 - row)] =
                     square.as_ref().map(Piece::from);
             }
         }
@@ -108,8 +112,11 @@ mod tests {
     const START: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     const FOOLS_MATE: &str = "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3";
 
-    fn piece_at(board: &Board, file: usize, rank: usize) -> Option<Piece> {
-        board.squares()[(rank - 1) * Board::SIZE + file]
+    fn piece_at(board: &Board, square: &str) -> Option<Piece> {
+        let [file, rank] = square.as_bytes() else {
+            panic!("invalid square name '{square}'");
+        };
+        board.squares()[Board::square_index(usize::from(file - b'a'), usize::from(rank - b'1'))]
     }
 
     #[test]
@@ -117,17 +124,19 @@ mod tests {
         let board = Board::from_fen(START).unwrap();
         let white_rook = Some(Piece::new(PieceKind::Rook, Color::White));
         let black_rook = Some(Piece::new(PieceKind::Rook, Color::Black));
-        assert_eq!(board.squares()[0], white_rook);
-        assert_eq!(board.squares()[Board::SQUARES - 1], black_rook);
+        assert_eq!(piece_at(&board, "a1"), white_rook);
+        assert_eq!(piece_at(&board, "h8"), black_rook);
+        assert_eq!(Board::square_index(0, 0), 0);
+        assert_eq!(Board::square_index(7, 7), Board::SQUARES - 1);
         assert_eq!(
-            piece_at(&board, 4, 1),
+            piece_at(&board, "e1"),
             Some(Piece::new(PieceKind::King, Color::White))
         );
         assert_eq!(
-            piece_at(&board, 4, 8),
+            piece_at(&board, "e8"),
             Some(Piece::new(PieceKind::King, Color::Black))
         );
-        assert_eq!(piece_at(&board, 3, 4), None);
+        assert_eq!(piece_at(&board, "d4"), None);
         assert_eq!(board.squares().iter().flatten().count(), 32);
     }
 
@@ -135,10 +144,10 @@ mod tests {
     fn reads_a_mid_game_position() {
         let board = Board::from_fen(FOOLS_MATE).unwrap();
         assert_eq!(
-            piece_at(&board, 7, 4),
+            piece_at(&board, "h4"),
             Some(Piece::new(PieceKind::Queen, Color::Black))
         );
-        assert_eq!(piece_at(&board, 3, 8), None);
+        assert_eq!(piece_at(&board, "d8"), None);
         assert_eq!(board.side_to_move(), Color::White);
     }
 
