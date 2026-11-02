@@ -1,5 +1,5 @@
-mod class;
 mod color;
+mod index;
 mod text;
 
 #[cfg(test)]
