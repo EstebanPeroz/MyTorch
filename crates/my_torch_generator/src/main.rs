@@ -15,5 +15,5 @@ fn main() -> ExitCode {
 }
 
 fn generate(_config_file: &Path, _count: usize) -> Result<(), String> {
-    todo!()
+    Err("error: network generation is not implemented yet".into())
 }
