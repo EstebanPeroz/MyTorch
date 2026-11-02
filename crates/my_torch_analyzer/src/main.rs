@@ -1,6 +1,4 @@
 mod cli;
-mod encode;
-mod label;
 mod modes;
 
 use std::process::ExitCode;
