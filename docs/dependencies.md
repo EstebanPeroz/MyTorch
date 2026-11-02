@@ -52,3 +52,6 @@ build therefore needs no network access, and `make` uses `--frozen`, so it fails
 - **Never edit a file in `vendor/`.** Cargo checks every file against `.cargo-checksum.json` and refuses to
   build if one changed. A project-wide search-and-replace in an IDE can do this by accident.
 - The pre-commit hook `cargo vendor is up to date` blocks commits where `vendor/` does not match `Cargo.lock`.
+- **Anchor `.gitignore` patterns** (`/target`, `/debug/`). An unanchored `target` or `debug` also ignores
+  folders inside `vendor/` (such as `vendor/cc/src/target/`), so a fresh clone misses those files and fails the
+  checksum check.
