@@ -1,10 +1,10 @@
-use std::path::PathBuf;
-use std::process;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 
 use clap::error::ErrorKind;
 use clap::{Arg, ArgMatches, Command};
 
-const HELP: &str = "USAGE
+pub const HELP: &str = "USAGE
         ./my_torch_generator config_file_1 nb_1 [config_file_2 nb_2...]
 
 DESCRIPTION
@@ -14,28 +14,55 @@ generate.
 ";
 
 pub struct NetworkRequest {
-    pub config_file: PathBuf,
-    pub count: usize,
+    config_file: PathBuf,
+    count: usize,
+}
+
+impl NetworkRequest {
+    pub fn config_file(&self) -> &Path {
+        &self.config_file
+    }
+
+    pub fn count(&self) -> usize {
+        self.count
+    }
+
+    fn from_pair(config_file: &str, count: &str) -> Result<Self, String> {
+        let count = count
+            .parse::<usize>()
+            .ok()
+            .filter(|&count| count > 0)
+            .ok_or_else(|| format!("error: invalid number of networks: '{count}'"))?;
+        Ok(NetworkRequest {
+            config_file: PathBuf::from(config_file),
+            count,
+        })
+    }
 }
 
 pub struct Args {
-    pub requests: Vec<NetworkRequest>,
+    requests: Vec<NetworkRequest>,
 }
 
 impl Args {
-    pub fn parse() -> Self {
-        let mut command = Self::command();
-        let result = command
-            .try_get_matches_from_mut(std::env::args_os())
-            .and_then(|matches| {
-                Self::from_matches(&matches)
-                    .map_err(|message| command.error(ErrorKind::ValueValidation, message))
-            });
-        result.unwrap_or_else(|error| {
-            let code = if error.use_stderr() { 84 } else { 0 };
-            let _ = error.print();
-            process::exit(code);
-        })
+    pub fn try_parse() -> Result<Option<Self>, String> {
+        Self::try_parse_from(std::env::args_os())
+    }
+
+    pub fn requests(&self) -> &[NetworkRequest] {
+        &self.requests
+    }
+
+    fn try_parse_from<I, T>(args: I) -> Result<Option<Self>, String>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<OsString> + Clone,
+    {
+        match Self::command().try_get_matches_from(args) {
+            Ok(matches) => Self::from_matches(&matches).map(Some),
+            Err(error) if error.kind() == ErrorKind::DisplayHelp => Ok(None),
+            Err(error) => Err(error.render().to_string().trim_end().to_string()),
+        }
     }
 
     fn command() -> Command {
@@ -50,22 +77,14 @@ impl Args {
     fn from_matches(matches: &ArgMatches) -> Result<Self, String> {
         let values: Vec<&String> = matches.get_many::<String>("PAIRS").unwrap().collect();
         if !values.len().is_multiple_of(2) {
-            return Err("each configuration file must be followed by a number of networks".into());
+            return Err(
+                "error: each configuration file must be followed by a number of networks".into(),
+            );
         }
         let requests = values
             .chunks(2)
-            .map(|pair| {
-                let count = pair[1]
-                    .parse::<usize>()
-                    .ok()
-                    .filter(|&count| count > 0)
-                    .ok_or_else(|| format!("invalid number of networks: '{}'", pair[1]))?;
-                Ok(NetworkRequest {
-                    config_file: PathBuf::from(pair[0]),
-                    count,
-                })
-            })
-            .collect::<Result<_, String>>()?;
+            .map(|pair| NetworkRequest::from_pair(pair[0], pair[1]))
+            .collect::<Result<_, _>>()?;
         Ok(Args { requests })
     }
 }
@@ -74,22 +93,26 @@ impl Args {
 mod tests {
     use super::*;
 
-    fn parse(args: &[&str]) -> Option<Args> {
-        let matches = Args::command()
-            .try_get_matches_from(std::iter::once("my_torch_generator").chain(args.iter().copied()))
-            .ok()?;
-        Args::from_matches(&matches).ok()
+    fn parse(args: &[&str]) -> Result<Option<Args>, String> {
+        Args::try_parse_from(std::iter::once("my_torch_generator").chain(args.iter().copied()))
     }
 
     #[test]
     fn parses_several_pairs() {
-        let args = parse(&["basic.conf", "3", "deep.conf", "1"]).unwrap();
+        let args = parse(&["basic.conf", "3", "deep.conf", "1"])
+            .unwrap()
+            .unwrap();
         let requests: Vec<_> = args
-            .requests
+            .requests()
             .iter()
-            .map(|request| (request.config_file.to_str().unwrap(), request.count))
+            .map(|request| (request.config_file().to_str().unwrap(), request.count()))
             .collect();
         assert_eq!(requests, [("basic.conf", 3), ("deep.conf", 1)]);
+    }
+
+    #[test]
+    fn help_is_not_an_error() {
+        assert!(matches!(parse(&["--help"]), Ok(None)));
     }
 
     #[test]
@@ -102,7 +125,7 @@ mod tests {
             &["basic.conf", "0"],
         ];
         for args in invalid {
-            assert!(parse(args).is_none(), "{args:?}");
+            assert!(parse(args).is_err(), "{args:?}");
         }
     }
 }
