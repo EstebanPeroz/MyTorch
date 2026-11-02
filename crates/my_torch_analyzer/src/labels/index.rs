@@ -1,6 +1,15 @@
-use super::Label;
+use super::{Color, Label};
 
 impl Label {
+    pub const ALL: [Label; 6] = [
+        Label::Nothing,
+        Label::Check(Color::White),
+        Label::Check(Color::Black),
+        Label::Checkmate(Color::White),
+        Label::Checkmate(Color::Black),
+        Label::Stalemate,
+    ];
+
     pub const COUNT: usize = Label::ALL.len();
 
     pub fn index(self) -> usize {
