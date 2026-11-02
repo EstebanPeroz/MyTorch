@@ -1,17 +1,18 @@
-NAME := my_torch_analyzer
+BINS := my_torch_analyzer my_torch_generator
 
-all: $(NAME)
+all: $(BINS)
 
-$(NAME):
-	cargo build --release --frozen
-	cp ./target/release/$(NAME) .
+$(BINS):
+	cargo build --release --frozen --workspace
+	cp ./target/release/my_torch_analyzer .
+	cp ./target/release/my_torch_generator .
 
 clean:
 	cargo clean
 
 fclean: clean
-	rm -f $(NAME)
+	rm -f $(BINS)
 
 re: fclean all
 
-.PHONY: all clean fclean re $(NAME)
+.PHONY: all clean fclean re $(BINS)
