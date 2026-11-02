@@ -73,3 +73,29 @@ fn valid_arguments_reach_the_selected_mode() {
         ),
     ]);
 }
+
+#[test]
+fn invalid_chess_files_exit_with_84() {
+    analyzer().assert_errors(&[
+        (
+            &["--predict", "net.nn", "tests/fixtures/missing.txt"],
+            "cannot read 'tests/fixtures/missing.txt'",
+        ),
+        (
+            &["--predict", "net.nn", "tests/fixtures/empty.txt"],
+            "tests/fixtures/empty.txt: no chessboards",
+        ),
+        (
+            &["--predict", "net.nn", "tests/fixtures/bad_label.txt"],
+            "tests/fixtures/bad_label.txt:2: unknown label 'Chek White'",
+        ),
+        (
+            &["--predict", "net.nn", "tests/fixtures/bad_fen.txt"],
+            "tests/fixtures/bad_fen.txt:3: invalid FEN 'rnbqkbnrr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1': invalid rank length: 9",
+        ),
+        (
+            &["--train", "net.nn", UNLABELED],
+            "tests/fixtures/unlabeled.txt:1: missing label, required for training",
+        ),
+    ]);
+}
