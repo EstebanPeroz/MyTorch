@@ -93,8 +93,8 @@ mod tests {
     }
 
     #[test]
-    fn errors_point_at_the_line_in_the_file() {
-        let content = format!("{START} Nothing\n\n\n{START} Chek\n");
+    fn errors_point_at_the_first_bad_line() {
+        let content = format!("{START} Nothing\n\n\n{START} Chek\n{START} Nope\n");
         assert_eq!(
             parse(&content, Labels::Optional),
             Err("error: boards.txt:4: unknown label 'Chek'".to_string())
