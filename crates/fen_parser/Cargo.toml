@@ -1,4 +1,0 @@
-[package]
-name = "fen_parser"
-version.workspace = true
-edition.workspace = true

@@ -9,4 +9,3 @@ edition = "2024"
 [workspace.dependencies]
 clap = "4.6.7"
 my_torch = { path = "crates/my_torch" }
-fen_parser = { path = "crates/fen_parser" }

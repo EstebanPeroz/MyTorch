@@ -5,5 +5,4 @@ edition.workspace = true
 
 [dependencies]
 clap.workspace = true
-fen_parser.workspace = true
 my_torch.workspace = true
