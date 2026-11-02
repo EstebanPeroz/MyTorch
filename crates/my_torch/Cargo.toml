@@ -1,0 +1,4 @@
+[package]
+name = "my_torch"
+version.workspace = true
+edition.workspace = true

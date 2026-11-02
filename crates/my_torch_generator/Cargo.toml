@@ -1,0 +1,8 @@
+[package]
+name = "my_torch_generator"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+clap.workspace = true
+my_torch.workspace = true
