@@ -24,6 +24,7 @@ The repository is a Cargo workspace. Every crate lives in `crates/`.
 | `cli_core` | library | The `Cli` trait and `run`, shared by both programs: argument parsing, `--help`, error printing, exit code 84. | `clap` |
 | `my_torch_analyzer` | library + binary | The chess analyzer. The library part holds the chess logic (`label`); the binary part (`main`, `cli`, `modes`) only wires it together. | `clap`, `chess_fen_parser` |
 | `my_torch_generator` | binary | Generates blank networks from configuration files. | `clap` |
+| `cli_test` | library, dev-only | Runs a program in end-to-end tests and checks its exit code, stdout and stderr. Never compiled into the programs. See [testing.md](testing.md). | none |
 
 Dependency arrows only go one way: programs use libraries, and `my_torch` never depends on chess code. This
 keeps the neural network module generic, as the subject requires.
@@ -71,6 +72,7 @@ bug that valid or invalid input can never trigger (for example `Label::index` on
 |---|---|
 | Workspace, Makefile, vendoring, pre-commit hooks | done |
 | Command line of both programs | done, see [cli.md](cli.md) |
+| End-to-end tests in CI | done, see [testing.md](testing.md) |
 | Labels | done, see [labels.md](labels.md) |
 | CHESSFILE reader | not started |
 | Neural network (`my_torch`) | not started |

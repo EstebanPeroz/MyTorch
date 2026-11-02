@@ -11,7 +11,8 @@ Both programs read their arguments with [clap](https://docs.rs/clap) through the
 | The program's work fails | — | `error: …` | 84 |
 | Success | the program's output | — | 0 |
 
-`--help` prints the subject's text exactly (`override_help`), not clap's generated help.
+`--help` prints the subject's text exactly (`override_help`), not clap's generated help. Each program keeps
+that text in `src/help.txt`, read with `include_str!` by the program and by its end-to-end test.
 
 ### How it works
 

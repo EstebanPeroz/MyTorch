@@ -91,7 +91,8 @@ crates/
 ├── my_torch/             neural network library (chess-agnostic)
 ├── cli_core/             shared command-line handling: parsing, --help, exit code 84
 ├── my_torch_analyzer/    the chess analyzer (library for chess logic + thin binary)
-└── my_torch_generator/   generates blank networks from configuration files
+├── my_torch_generator/   generates blank networks from configuration files
+└── cli_test/             dev-only helpers for end-to-end tests
 docs/                     technical documentation
 vendor/                   vendored dependencies
 ```
@@ -103,7 +104,7 @@ The technical documentation starts at [docs/README.md](docs/README.md).
 ```sh
 uv tool install pre-commit
 pre-commit install
-cargo test --workspace
+cargo test --workspace    # unit and end-to-end tests, also run by CI
 ```
 
 On each commit the hooks run `cargo clippy --fix`, `cargo fmt` and basic file checks, and check that commit
