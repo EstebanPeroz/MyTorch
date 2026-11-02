@@ -46,8 +46,7 @@ impl FromStr for Sample {
 mod tests {
     use super::*;
     use crate::color::Color;
-
-    const START: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    use crate::test_fens::START;
 
     fn parse(line: &str) -> Result<Sample, String> {
         line.parse()

@@ -108,9 +108,7 @@ impl From<&chess_fen_parser::Color> for Color {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    const START: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    const FOOLS_MATE: &str = "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3";
+    use crate::test_fens::{FOOLS_MATE, START};
 
     fn piece_at(board: &Board, square: &str) -> Option<Piece> {
         let [file, rank] = square.as_bytes() else {
