@@ -4,8 +4,8 @@
 random numbers (see [dependencies.md](dependencies.md)). It knows nothing about chess: the analyzer turns
 chessboards into numbers and labels into target vectors, and `my_torch` only sees matrices.
 
-What exists today: the `Matrix` type and the starting weights (`Initialization`). Layers, activations, losses
-and training come next.
+What exists today: the `Matrix` type, the starting weights (`Initialization`) and the activation functions
+(`Activation`). Layers, losses and training come next.
 
 ## Numbers are `f32`
 
@@ -74,6 +74,33 @@ same scale through the layers:
 `init.weights(in, out, &mut rng)` returns an `in × out` matrix of such weights. The generator is a
 `rand::rngs::StdRng` created with `StdRng::seed_from_u64(seed)`: the same seed always gives the same weights.
 It panics on a layer with no inputs or no outputs.
+
+## Activations
+
+A layer only multiplies and adds (`X · W + b`), so two layers in a row are still one multiplication and one
+addition: they would collapse into a single layer, which can only separate classes with a straight line. An
+activation function, applied to every value after the layer, bends the result so that stacked layers can learn
+curved boundaries (XOR, for example, cannot be split by a straight line).
+
+| `Activation` | Value | Slope (derivative) | Used for |
+|---|---|---|---|
+| `Identity` | `x` | `1` | the output layer, when the loss shapes the output (softmax for classes) |
+| `Sigmoid` | `1 / (1 + e⁻ˣ)`, between 0 and 1 | `s × (1 − s)`, at most 0.25 | an output read as a probability |
+| `Tanh` | `tanh(x)`, between −1 and 1 | `1 − tanh²(x)`, at most 1 | hidden layers of small networks |
+| `Relu` | `max(0, x)` | `1` if `x > 0`, else `0` | hidden layers |
+| `LeakyRelu` | `x` if `x > 0`, else `0.01 x` | `1` if `x > 0`, else `0.01` | hidden layers, without dead neurons |
+
+`activation.apply(&z)` returns `f(z)` and `activation.derivative(&z)` returns `f'(z)`, value by value.
+Backpropagation multiplies the gradient by that slope at every layer, which is why the choice matters:
+
+- `Sigmoid` and `Tanh` flatten out for large `|x|` (their slope gets close to 0), and the sigmoid's slope is at
+  most 0.25, so gradients shrink layer after layer.
+- `Relu` lets gradients through unchanged where `x > 0`, but a neuron whose `x` is always negative gets a slope
+  of 0 and stops learning. `LeakyRelu` keeps a small slope there.
+- At exactly `x = 0`, `Relu` and `LeakyRelu` have no slope; they use the one of the negative side.
+
+Pair each activation with its initialization (see [Starting weights](#starting-weights)): `He` for `Relu` and
+`LeakyRelu`, `Xavier` for `Sigmoid` and `Tanh`.
 
 ## Errors
 
