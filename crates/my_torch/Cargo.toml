@@ -5,3 +5,5 @@ edition.workspace = true
 
 [dependencies]
 ndarray.workspace = true
+rand.workspace = true
+rand_distr.workspace = true
