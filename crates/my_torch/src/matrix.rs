@@ -1,3 +1,5 @@
+use std::fmt;
+
 use ndarray::{Array2, Axis, Zip};
 
 pub type Scalar = f32;
@@ -37,7 +39,7 @@ impl Matrix {
                 rows[index].as_ref().len()
             ));
         }
-        let data = rows.iter().flat_map(|row| row.as_ref()).copied().collect();
+        let data = rows.iter().flat_map(AsRef::as_ref).copied().collect();
         Matrix::from_vec(rows.len(), cols, data)
     }
 
@@ -162,8 +164,8 @@ impl Matrix {
     }
 }
 
-impl std::fmt::Display for Matrix {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Matrix {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "{} × {} matrix", self.rows(), self.cols())
     }
 }
