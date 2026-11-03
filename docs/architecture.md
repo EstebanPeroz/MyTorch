@@ -76,6 +76,6 @@ bug that valid or invalid input can never trigger (for example `Label::index` on
 | Labels | done, see [labels.md](labels.md) |
 | CHESSFILE reader | done, see [chess-file.md](chess-file.md) |
 | Dataset | not in git, see [dataset.md](dataset.md) |
-| Neural network (`my_torch`) | `Matrix`, starting weights and activations done, see [my_torch.md](my_torch.md); layers and training not started |
+| Neural network (`my_torch`) | `Matrix`, starting weights, activations and the dense layer done, see [my_torch.md](my_torch.md); losses and training not started |
 | `--train`, `--predict` | read the CHESSFILE, then return a "not implemented" error (exit 84) |
 | Network generation | not implemented: returns an error and exits with 84 |

@@ -4,8 +4,8 @@
 random numbers (see [dependencies.md](dependencies.md)). It knows nothing about chess: the analyzer turns
 chessboards into numbers and labels into target vectors, and `my_torch` only sees matrices.
 
-What exists today: the `Matrix` type, the starting weights (`Initialization`) and the activation functions
-(`Activation`). Layers, losses and training come next.
+What exists today: the `Matrix` type, the starting weights (`Initialization`), the activation functions
+(`Activation`) and the dense layer (`Dense`). Losses, the network and training come next.
 
 ## Numbers are `f32`
 
@@ -26,7 +26,7 @@ X =   [  0   1 ]   ← sample 2        4 × 2   (n = 4, features = 2)
       [  1   1 ]   ← sample 4
 ```
 
-A layer with `in` inputs and `out` neurons will hold a weight matrix `W` of `in × out` (column `j` holds the
+A layer with `in` inputs and `out` neurons holds a weight matrix `W` of `in × out` (column `j` holds the
 weights of neuron `j`). Then `X · W` is `n × out`: still one row per sample, now one column per neuron. The
 network's final output will therefore have one row per chessboard, in the order of the CHESSFILE, which is
 what `--predict` must print.
@@ -102,6 +102,55 @@ Backpropagation multiplies the gradient by that slope at every layer, which is w
 Pair each activation with its initialization (see [Starting weights](#starting-weights)): `He` for `Relu` and
 `LeakyRelu`, `Xavier` for `Sigmoid` and `Tanh`.
 
+## Dense layer
+
+`Dense` is a fully connected layer: every neuron reads every input. It holds its weights `W` (`in × out`), its
+biases `b` (one row of `out` values, one per neuron) and its activation `f`.
+
+| Method | Result |
+|---|---|
+| `Dense::new(weights, biases, activation)` | a layer from existing values; refuses biases that are not `1 × out` |
+| `Dense::random(in, out, activation, initialization, &mut rng)` | a new layer: random weights, biases at 0 |
+| `input_size()`, `output_size()`, `weights()`, `biases()`, `activation()` | reading the layer |
+| `forward(&x)` | the layer's output, for predictions |
+| `forward_cached(&x)` | the same output, plus a `DenseCache` that `backward` needs |
+| `backward(&cache, &da)` | the gradients of the layer (`DenseGradients`) and the gradient for the previous layer |
+| `update(&gradients, rule)` | every weight and bias replaced by `rule(parameter, gradient)` |
+
+Biases start at 0: the random weights already make the neurons different, so the biases do not need to.
+
+### Forward
+
+With an input `X` of `n × in` (one sample per row):
+
+| Step | Formula | Shape |
+|---|---|---|
+| weighted sum | `Z = X · W + b` (`b` is added to every row) | `n × out` |
+| output | `A = f(Z)`, value by value | `n × out` |
+
+### Backward
+
+Backpropagation goes through the layers in reverse. Each layer receives `dA`, how the loss changes with each of
+its outputs, and computes:
+
+| Gradient | Formula | Shape |
+|---|---|---|
+| weighted sum | `dZ = dA ⊙ f'(Z)` (`⊙`: value by value) | `n × out` |
+| weights | `dW = Xᵀ · dZ` | `in × out` |
+| biases | `db` = sum of the rows of `dZ` | `1 × out` |
+| input | `dX = dZ · Wᵀ`, which becomes `dA` for the previous layer | `n × in` |
+
+`Xᵀ · dZ` and the row sum add up the contributions of the `n` samples, so one matrix product handles the whole
+batch. `backward` needs `X` and `Z` from the forward pass: `forward_cached` keeps them in a `DenseCache`.
+`forward` skips that copy, which predictions do not need.
+
+A layer never changes while it computes: the weights only change in `update`, after the whole backward pass.
+`update` takes the rule as a function so that the optimizer decides how to step (gradient descent will use
+`parameter − learning_rate × gradient`).
+
+The tests check `backward` against measured slopes: nudge each weight, bias and input by `±0.01`, compute the
+change in the output, and compare with what `backward` returned.
+
 ## Errors
 
 `from_vec` and `from_rows` refuse a matrix with no rows or no columns, rows of different lengths, and a number
@@ -109,5 +158,5 @@ of values that does not match the shape. They return `Err(String)` without the `
 the program that calls the library adds context and the prefix.
 
 The operations **panic** on mismatched shapes (for example `matmul` of a `2 × 3` by a `2 × 3`) and on indices
-outside the matrix. The types built on `Matrix` will check their sizes when they are created, so such a panic
-would be a bug in `my_torch`, not a user error.
+outside the matrix, and `Dense` panics on an input with the wrong number of columns. The types built on these
+check their sizes when they are created, so such a panic would be a bug in `my_torch`, not a user error.
