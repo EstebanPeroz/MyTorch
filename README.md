@@ -73,7 +73,7 @@ Labels are required with `--train` and optional with `--predict`. Blank lines ar
 points at the line, e.g. `error: boards.txt:12: unknown label 'Chek'`. See
 [docs/chess-file.md](docs/chess-file.md).
 
-The training data provided with the subject goes in `dataset/` (ignored by git). See
+The training data goes in `dataset/` (ignored by git). See
 [docs/dataset.md](docs/dataset.md).
 
 ### my_torch_generator

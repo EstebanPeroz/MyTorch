@@ -10,7 +10,7 @@ is in the [main README](../README.md).
 | [labels.md](labels.md) | The outputs the network predicts: classes, colors, text format, class indices |
 | [chess-file.md](chess-file.md) | The CHESSFILE format, how it is read, its error messages, the `Board` type |
 | [my_torch.md](my_torch.md) | The neural network library: conventions (`f32`, one sample per row) and the `Matrix` type |
-| [dataset.md](dataset.md) | The training data provided with the subject: layout, statistics, quality, open decisions |
+| [dataset.md](dataset.md) | The training data: layout, statistics, quality, open decisions |
 | [dependencies.md](dependencies.md) | External crates, why they were chosen, and how vendoring works |
 | [testing.md](testing.md) | Unit and end-to-end tests, the `cli_test` helpers, CI |
 

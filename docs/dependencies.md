@@ -1,7 +1,7 @@
 # Dependencies
 
-The subject forbids neural network libraries (PyTorch, TensorFlow…). Everything related to the network
-(layers, activations, losses, backpropagation, training) is written from scratch in `my_torch`. Its only
+No neural network library (PyTorch, TensorFlow…) is used. Everything related to the network (layers,
+activations, losses, backpropagation, training) is written from scratch in `my_torch`. Its only
 dependency is `ndarray`, which does the matrix arithmetic. The programs use two other external crates.
 
 | Crate | Version | Used by | Purpose |

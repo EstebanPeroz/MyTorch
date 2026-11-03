@@ -6,12 +6,12 @@ Both programs read their arguments with [clap](https://docs.rs/clap) through the
 
 | Situation | stdout | stderr | Exit code |
 |---|---|---|---|
-| `--help` or `-h` | the subject's usage text | — | 0 |
+| `--help` or `-h` | the usage text | — | 0 |
 | Invalid arguments | — | `error: …` (errors detected by clap add a short usage line) | 84 |
 | The program's work fails | — | `error: …` | 84 |
 | Success | the program's output | — | 0 |
 
-`--help` prints the subject's text exactly (`override_help`), not clap's generated help. Each program keeps
+`--help` prints a fixed text exactly (`override_help`), not clap's generated help. Each program keeps
 that text in `src/help.txt`, read with `include_str!` by the program and by its end-to-end test.
 
 ### How it works
@@ -29,7 +29,7 @@ pub trait Cli: Sized {
 
 | Item | Written by | Role |
 |---|---|---|
-| `HELP` | each program | the subject's help text |
+| `HELP` | each program | the program's help text |
 | `command()` | each program | the list of accepted arguments |
 | `from_matches()` | each program | turns clap's parsed values into the program's `Args`, with extra validation |
 | `try_parse_from()` | `cli_core` (default method) | parses; returns `Ok(Some(args))`, `Ok(None)` for `--help`, or `Err(message)` |
@@ -66,9 +66,8 @@ A new program only has to implement `Cli` and call `cli_core::run`; parsing, hel
 The parser resolves the save file itself, so the program receives `Mode::Train { save_file }` with a path that
 is always set.
 
-**Deviation from the subject:** the subject writes the mode in brackets (`[--predict | --train …]`), which
-suggests it is optional, but it never says what should happen without one. Running without a mode is therefore
-an error.
+**A mode is required.** The usage line shows the mode in brackets (`[--predict | --train …]`), which reads as
+optional, but neither mode is a sensible default. Running without a mode is therefore an error.
 
 ## my_torch_generator
 
@@ -86,9 +85,3 @@ an error.
 
 Each pair becomes a `NetworkRequest`, which checks its own count when it is created: a request with an invalid
 count cannot exist.
-
-## Help text note
-
-In the subject PDF, the last three lines of the analyzer's help (`--save`, `LOADFILE`, `CHESSFILE`) appear
-indented by 9 spaces instead of 8. This is most likely an artifact of the PDF layout, so every line uses
-8 spaces.

@@ -15,16 +15,16 @@ too (see [chess-file.md](chess-file.md)).
 | 2 | `Check Black` | Black is giving check |
 | 3 | `Checkmate White` | White has checkmated Black |
 | 4 | `Checkmate Black` | Black has checkmated White |
-| 5 | `Stalemate` | the side to move has no legal move and is not in check (bonus) |
+| 5 | `Stalemate` | the side to move has no legal move and is not in check |
 
 The index is the label's position in `Label::ALL`. It is the network's output neuron for that label, so the
 order must never change once networks have been trained.
 
 ## Which color is written
 
-The color is the **attacking side**, not the side to move. The subject's examples show it:
+The color is the **attacking side**, not the side to move:
 
-| Board | Side to move | Subject's output |
+| Board | Side to move | Output |
 |---|---|---|
 | `rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3` (Fool's mate) | White | `Checkmate Black` |
 | `rnbqkbnr/pppp2pp/8/4pp1Q/3P4/4P3/PPP2PPP/RNB1KBNR b KQkq - 1 3` (White queen on h5) | Black | `Check White` |
