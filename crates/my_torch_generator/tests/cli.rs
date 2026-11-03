@@ -7,7 +7,7 @@ fn generator() -> Program {
 }
 
 #[test]
-fn help_prints_the_subject_usage() {
+fn help_prints_the_usage() {
     generator().assert_help(HELP);
 }
 
