@@ -4,7 +4,7 @@ use std::process::ExitCode;
 use clap::error::ErrorKind;
 use clap::{ArgMatches, Command};
 
-const ERROR_EXIT_CODE: u8 = 84;
+pub const ERROR_EXIT_CODE: u8 = 84;
 
 pub trait Cli: Sized {
     const HELP: &'static str;

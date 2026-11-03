@@ -3,3 +3,6 @@ name = "cli_test"
 version.workspace = true
 edition.workspace = true
 publish = false
+
+[dependencies]
+cli_core.workspace = true

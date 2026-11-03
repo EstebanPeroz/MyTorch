@@ -154,6 +154,9 @@ dependencies = [
 [[package]]
 name = "cli_test"
 version = "0.1.0"
+dependencies = [
+ "cli_core",
+]
 
 [[package]]
 name = "colorchoice"

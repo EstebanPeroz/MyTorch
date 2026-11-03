@@ -2,7 +2,7 @@ use std::fmt;
 use std::path::PathBuf;
 use std::process::Command;
 
-const ERROR_EXIT_CODE: i32 = 84;
+use cli_core::ERROR_EXIT_CODE;
 
 pub struct Program {
     path: PathBuf,
@@ -60,7 +60,11 @@ impl Outcome {
 
     #[track_caller]
     pub fn assert_error(&self, message: &str) {
-        assert_eq!(self.code, Some(ERROR_EXIT_CODE), "wrong exit code: {self}");
+        assert_eq!(
+            self.code,
+            Some(i32::from(ERROR_EXIT_CODE)),
+            "wrong exit code: {self}"
+        );
         assert!(self.stdout.is_empty(), "unexpected stdout: {self}");
         assert!(
             self.stderr.starts_with(&format!("error: {message}")),

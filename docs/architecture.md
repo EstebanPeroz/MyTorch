@@ -24,7 +24,7 @@ The repository is a Cargo workspace. Every crate lives in `crates/`.
 | `cli_core` | library | The `Cli` trait and `run`, shared by both programs: argument parsing, `--help`, error printing, exit code 84. | `clap` |
 | `my_torch_analyzer` | library + binary | The chess analyzer. The library part holds the chess logic (`color`, `label`, `board`, `sample`, `chess_file`); the binary part (`main`, `cli`, `modes`) only wires it together. | `clap`, `chess_fen_parser` |
 | `my_torch_generator` | binary | Generates blank networks from configuration files. | `clap` |
-| `cli_test` | library, dev-only | Runs a program in end-to-end tests and checks its exit code, stdout and stderr. Never compiled into the programs. See [testing.md](testing.md). | none |
+| `cli_test` | library, dev-only | Runs a program in end-to-end tests and checks its exit code (against `cli_core::ERROR_EXIT_CODE`), stdout and stderr. Never compiled into the programs. See [testing.md](testing.md). | none |
 
 Dependency arrows only go one way: programs use libraries, and `my_torch` never depends on chess code. This
 keeps the neural network module generic: it could learn any other problem.
