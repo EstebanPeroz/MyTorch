@@ -319,6 +319,16 @@ mod tests {
     }
 
     #[test]
+    fn wrap_stores_column_major_arrays_row_after_row() {
+        let rows = Array2::from_shape_vec((3, 2), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+        let column_major = rows.t().to_owned();
+        assert!(!column_major.is_standard_layout());
+        let wrapped = Matrix::wrap(column_major);
+        assert_eq!(wrapped.data(), &[1.0, 3.0, 5.0, 2.0, 4.0, 6.0]);
+        assert_eq!(wrapped.row(1), &[2.0, 4.0, 6.0]);
+    }
+
+    #[test]
     fn argmax_rows_keeps_the_first_of_equal_values() {
         let a = matrix(&[&[0.1, 0.7, 0.2], &[5.0, 5.0, 1.0], &[-3.0, -2.0, -1.0]]);
         assert_eq!(a.argmax_rows(), vec![1, 0, 2]);
