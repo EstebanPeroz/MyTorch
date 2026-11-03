@@ -20,7 +20,7 @@ The repository is a Cargo workspace. Every crate lives in `crates/`.
 
 | Crate | Kind | Role | External dependencies |
 |---|---|---|---|
-| `my_torch` | library | The neural network: creating, training, saving and loading networks. Knows nothing about chess. | none |
+| `my_torch` | library | The neural network: creating, training, saving and loading networks. Knows nothing about chess. | `ndarray` (matrix arithmetic only) |
 | `cli_core` | library | The `Cli` trait and `run`, shared by both programs: argument parsing, `--help`, error printing, exit code 84. | `clap` |
 | `my_torch_analyzer` | library + binary | The chess analyzer. The library part holds the chess logic (`color`, `label`, `board`, `sample`, `chess_file`); the binary part (`main`, `cli`, `modes`) only wires it together. | `clap`, `chess_fen_parser` |
 | `my_torch_generator` | binary | Generates blank networks from configuration files. | `clap` |

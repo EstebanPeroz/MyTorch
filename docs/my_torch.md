@@ -1,7 +1,8 @@
 # The `my_torch` library
 
-`my_torch` is the neural network, written from scratch with no dependencies. It knows nothing about chess: the
-analyzer turns chessboards into numbers and labels into target vectors, and `my_torch` only sees matrices.
+`my_torch` is the neural network, written from scratch. Its only dependency is `ndarray`, for matrix arithmetic
+(see [dependencies.md](dependencies.md#ndarray)). It knows nothing about chess: the analyzer turns chessboards
+into numbers and labels into target vectors, and `my_torch` only sees matrices.
 
 What exists today: the `Matrix` type. Layers, activations, losses and training come next.
 
@@ -31,8 +32,9 @@ what `--predict` must print.
 
 ## `Matrix`
 
-Values are stored row after row in one `Vec<Scalar>` (row-major), so a sample's values sit next to each other
-in memory and copying a few rows into a mini-batch is cheap.
+`Matrix` wraps an `ndarray::Array2<f32>`, and only `matrix.rs` uses `ndarray`: the rest of the library sees our
+own type. Values are stored row after row (row-major), so a sample's values sit next to each other in memory and
+copying a few rows into a mini-batch is cheap.
 
 | Method | Result |
 |---|---|
