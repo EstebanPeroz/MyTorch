@@ -4,7 +4,8 @@
 random numbers (see [dependencies.md](dependencies.md)). It knows nothing about chess: the analyzer turns
 chessboards into numbers and labels into target vectors, and `my_torch` only sees matrices.
 
-What exists today: the `Matrix` type. Layers, activations, losses and training come next.
+What exists today: the `Matrix` type and the starting weights (`Initialization`). Layers, activations, losses
+and training come next.
 
 ## Numbers are `f32`
 
@@ -53,6 +54,26 @@ copying a few rows into a mini-batch is cheap.
 
 The two transposed products are what backpropagation needs (`Xᵀ · dZ` for the weight gradients, `dZ · Wᵀ` for
 the gradient passed to the previous layer).
+
+## Starting weights
+
+A layer's weights cannot all start at the same value: every neuron of the layer would compute the same thing,
+receive the same gradient, and stay identical forever. So they start random, drawn from a normal distribution
+(the bell curve) centered on 0.
+
+How wide that bell curve is matters. Each neuron adds up `in` weighted inputs, so with weights that are too
+large the sums grow from layer to layer and the activations saturate; too small, and they shrink towards 0. Both
+stall learning. `Initialization` picks a standard deviation from the layer's size that keeps the values at the
+same scale through the layers:
+
+| Method | Standard deviation | For |
+|---|---|---|
+| `Initialization::Xavier` | `√(2 / (in + out))` | `Sigmoid`, `Tanh` |
+| `Initialization::He` | `√(2 / in)` | `ReLU` |
+
+`init.weights(in, out, &mut rng)` returns an `in × out` matrix of such weights. The generator is a
+`rand::rngs::StdRng` created with `StdRng::seed_from_u64(seed)`: the same seed always gives the same weights.
+It panics on a layer with no inputs or no outputs.
 
 ## Errors
 
