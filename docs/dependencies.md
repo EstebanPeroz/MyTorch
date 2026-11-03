@@ -1,14 +1,16 @@
 # Dependencies
 
 No neural network library (PyTorch, TensorFlow…) is used. Everything related to the network (layers,
-activations, losses, backpropagation, training) is written from scratch in `my_torch`. Its only
-dependency is `ndarray`, which does the matrix arithmetic. The programs use two other external crates.
+activations, losses, backpropagation, training) is written from scratch in `my_torch`. It uses
+`ndarray` for the matrix arithmetic and `rand` for random numbers. The programs use two other external crates.
 
 | Crate | Version | Used by | Purpose |
 |---|---|---|---|
 | [clap](https://docs.rs/clap) | 4.6.7 | `cli_core`, both programs | command-line parsing |
 | [chess_fen_parser](https://crates.io/crates/chess_fen_parser) | 0.1.1 | `my_torch_analyzer` | reading FEN strings |
 | [ndarray](https://docs.rs/ndarray) | 0.17.2 | `my_torch` (`matrix.rs` only) | matrix arithmetic |
+| [rand](https://docs.rs/rand) | 0.10.3 | `my_torch` | seeded random numbers |
+| [rand_distr](https://docs.rs/rand_distr) | 0.6.0 | `my_torch` | the normal distribution |
 
 ## clap
 
@@ -78,7 +80,22 @@ on the three products a training step needs, for a batch of 64 chessboards, 768 
 - `dot` calls `matrixmultiply`, on a single thread.
 - Its panics on mismatched shapes are not used: `Matrix` checks shapes first and panics with its own message.
 
-**Cost:** 6 crates and 4 MB in `vendor/` (about 40 MB in total now), with no C code.
+**Cost:** 6 crates and 4 MB in `vendor/`, with no C code.
+
+## rand
+
+Training needs random numbers twice: to pick the starting weights, and to shuffle the samples before each
+epoch. `rand` provides the generator and the shuffle; `rand_distr` adds the normal distribution (the bell curve)
+that starting weights are drawn from.
+
+- Every generator is a `StdRng` created from an explicit seed, so the same seed, data and settings train the
+  same network. `rand` may change `StdRng`'s algorithm in a future version, but the vendored version only
+  changes when we update it.
+- `rand` is used without its default features, only `std` and `std_rng`: the generator is never seeded from the
+  operating system, since every seed is explicit.
+
+**Cost:** 8 folders and 3 MB in `vendor/` (about 43 MB in total now), with no C code. `getrandom` and `r-efi`
+are among them because `Cargo.lock` lists them, but they are never compiled.
 
 ## Vendoring
 

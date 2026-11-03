@@ -1,8 +1,8 @@
 # The `my_torch` library
 
-`my_torch` is the neural network, written from scratch. Its only dependency is `ndarray`, for matrix arithmetic
-(see [dependencies.md](dependencies.md#ndarray)). It knows nothing about chess: the analyzer turns chessboards
-into numbers and labels into target vectors, and `my_torch` only sees matrices.
+`my_torch` is the neural network, written from scratch. It uses `ndarray` for matrix arithmetic and `rand` for
+random numbers (see [dependencies.md](dependencies.md)). It knows nothing about chess: the analyzer turns
+chessboards into numbers and labels into target vectors, and `my_torch` only sees matrices.
 
 What exists today: the `Matrix` type. Layers, activations, losses and training come next.
 
