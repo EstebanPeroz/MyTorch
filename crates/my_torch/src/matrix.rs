@@ -56,6 +56,7 @@ impl Matrix {
     }
 
     pub fn row(&self, row: usize) -> &[Scalar] {
+        assert!(row < self.rows(), "row {row} is outside {self}");
         &self.data()[row * self.cols()..(row + 1) * self.cols()]
     }
 
@@ -231,6 +232,12 @@ mod tests {
     #[should_panic(expected = "(2, 0) is outside 2 × 2 matrix")]
     fn get_panics_outside_the_matrix() {
         Matrix::zeros(2, 2).get(2, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "row 2 is outside 2 × 3 matrix")]
+    fn row_panics_outside_the_matrix() {
+        Matrix::zeros(2, 3).row(2);
     }
 
     #[test]
