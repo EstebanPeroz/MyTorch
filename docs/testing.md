@@ -4,8 +4,8 @@
 cargo test --workspace
 ```
 
-CI runs the same command on every push and pull request to `main` (`.github/workflows/checks.yml`, step
-*Unit and end-to-end tests*), after the style hooks and `make`.
+CI runs the same command on every push to `main` and on every pull request, whatever branch it targets
+(`.github/workflows/checks.yml`, step *Unit and end-to-end tests*), after the style hooks and `make`.
 
 ## Two kinds of tests
 
