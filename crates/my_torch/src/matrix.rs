@@ -1,20 +1,16 @@
+use ndarray::{Array2, Axis, Zip};
+
 pub type Scalar = f32;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Matrix {
-    rows: usize,
-    cols: usize,
-    data: Vec<Scalar>,
+    values: Array2<Scalar>,
 }
 
 impl Matrix {
     pub fn zeros(rows: usize, cols: usize) -> Matrix {
         assert!(rows > 0 && cols > 0, "a matrix cannot be {rows} × {cols}");
-        Matrix {
-            rows,
-            cols,
-            data: vec![0.0; rows * cols],
-        }
+        Matrix::wrap(Array2::zeros((rows, cols)))
     }
 
     pub fn from_vec(rows: usize, cols: usize, data: Vec<Scalar>) -> Result<Matrix, String> {
@@ -28,7 +24,8 @@ impl Matrix {
                 data.len()
             ));
         }
-        Ok(Matrix { rows, cols, data })
+        let values = Array2::from_shape_vec((rows, cols), data).expect("the shape was checked");
+        Ok(Matrix::wrap(values))
     }
 
     pub fn from_rows<R: AsRef<[Scalar]>>(rows: &[R]) -> Result<Matrix, String> {
@@ -45,34 +42,38 @@ impl Matrix {
     }
 
     pub fn rows(&self) -> usize {
-        self.rows
+        self.values.nrows()
     }
 
     pub fn cols(&self) -> usize {
-        self.cols
+        self.values.ncols()
     }
 
     pub fn data(&self) -> &[Scalar] {
-        &self.data
+        self.values
+            .as_slice()
+            .expect("a matrix is always stored row after row")
     }
 
     pub fn row(&self, row: usize) -> &[Scalar] {
-        &self.data[row * self.cols..(row + 1) * self.cols]
+        &self.data()[row * self.cols()..(row + 1) * self.cols()]
     }
 
     pub fn get(&self, row: usize, col: usize) -> Scalar {
-        self.data[self.index(row, col)]
+        self.check_index(row, col);
+        self.values[[row, col]]
     }
 
     pub fn set(&mut self, row: usize, col: usize, value: Scalar) {
-        let index = self.index(row, col);
-        self.data[index] = value;
+        self.check_index(row, col);
+        self.values[[row, col]] = value;
     }
 
     pub fn argmax_rows(&self) -> Vec<usize> {
-        (0..self.rows)
-            .map(|row| {
-                let values = self.row(row);
+        self.values
+            .rows()
+            .into_iter()
+            .map(|values| {
                 (1..values.len()).fold(0, |best, col| {
                     if values[col] > values[best] {
                         col
@@ -85,121 +86,81 @@ impl Matrix {
     }
 
     pub fn matmul(&self, other: &Matrix) -> Matrix {
-        assert_eq!(self.cols, other.rows, "matmul: {self} · {other}");
-        let mut result = Matrix::zeros(self.rows, other.cols);
-        for i in 0..self.rows {
-            let output = &mut result.data[i * other.cols..(i + 1) * other.cols];
-            for (k, &left) in self.row(i).iter().enumerate() {
-                for (out, &right) in output.iter_mut().zip(other.row(k)) {
-                    *out += left * right;
-                }
-            }
-        }
-        result
+        assert_eq!(self.cols(), other.rows(), "matmul: {self} · {other}");
+        Matrix::wrap(self.values.dot(&other.values))
     }
 
     pub fn transpose_matmul(&self, other: &Matrix) -> Matrix {
-        assert_eq!(self.rows, other.rows, "transpose_matmul: {self}ᵀ · {other}");
-        let mut result = Matrix::zeros(self.cols, other.cols);
-        for k in 0..self.rows {
-            let right = other.row(k);
-            for (i, &left) in self.row(k).iter().enumerate() {
-                let output = &mut result.data[i * other.cols..(i + 1) * other.cols];
-                for (out, &value) in output.iter_mut().zip(right) {
-                    *out += left * value;
-                }
-            }
-        }
-        result
+        assert_eq!(
+            self.rows(),
+            other.rows(),
+            "transpose_matmul: {self}ᵀ · {other}"
+        );
+        Matrix::wrap(self.values.t().dot(&other.values))
     }
 
     pub fn matmul_transpose(&self, other: &Matrix) -> Matrix {
-        assert_eq!(self.cols, other.cols, "matmul_transpose: {self} · {other}ᵀ");
-        let mut result = Matrix::zeros(self.rows, other.rows);
-        for i in 0..self.rows {
-            let left = self.row(i);
-            for j in 0..other.rows {
-                result.data[i * other.rows + j] =
-                    left.iter().zip(other.row(j)).map(|(a, b)| a * b).sum();
-            }
-        }
-        result
+        assert_eq!(
+            self.cols(),
+            other.cols(),
+            "matmul_transpose: {self} · {other}ᵀ"
+        );
+        Matrix::wrap(self.values.dot(&other.values.t()))
     }
 
     pub fn add_row(&self, row: &Matrix) -> Matrix {
         assert!(
-            row.rows == 1 && row.cols == self.cols,
+            row.rows() == 1 && row.cols() == self.cols(),
             "add_row: {self} + {row}"
         );
-        let mut result = self.clone();
-        for chunk in result.data.chunks_mut(self.cols) {
-            for (value, &added) in chunk.iter_mut().zip(&row.data) {
-                *value += added;
-            }
-        }
-        result
+        Matrix::wrap(&self.values + &row.values)
     }
 
     pub fn sum_rows(&self) -> Matrix {
-        let mut result = Matrix::zeros(1, self.cols);
-        for chunk in self.data.chunks(self.cols) {
-            for (sum, &value) in result.data.iter_mut().zip(chunk) {
-                *sum += value;
-            }
-        }
-        result
+        Matrix::wrap(self.values.sum_axis(Axis(0)).insert_axis(Axis(0)))
     }
 
     pub fn map(&self, function: impl Fn(Scalar) -> Scalar) -> Matrix {
-        Matrix {
-            rows: self.rows,
-            cols: self.cols,
-            data: self.data.iter().map(|&value| function(value)).collect(),
-        }
+        Matrix::wrap(self.values.mapv(function))
     }
 
     pub fn zip_map(&self, other: &Matrix, function: impl Fn(Scalar, Scalar) -> Scalar) -> Matrix {
         assert!(
-            self.rows == other.rows && self.cols == other.cols,
+            self.rows() == other.rows() && self.cols() == other.cols(),
             "zip_map: {self} and {other}"
         );
-        Matrix {
-            rows: self.rows,
-            cols: self.cols,
-            data: self
-                .data
-                .iter()
-                .zip(&other.data)
-                .map(|(&left, &right)| function(left, right))
-                .collect(),
-        }
+        Matrix::wrap(
+            Zip::from(&self.values)
+                .and(&other.values)
+                .map_collect(|&left, &right| function(left, right)),
+        )
     }
 
     pub fn select_rows(&self, indices: &[usize]) -> Matrix {
         assert!(!indices.is_empty(), "select_rows: no rows selected");
-        Matrix {
-            rows: indices.len(),
-            cols: self.cols,
-            data: indices
-                .iter()
-                .flat_map(|&row| self.row(row))
-                .copied()
-                .collect(),
-        }
+        Matrix::wrap(self.values.select(Axis(0), indices))
     }
 
-    fn index(&self, row: usize, col: usize) -> usize {
+    fn wrap(values: Array2<Scalar>) -> Matrix {
+        let values = if values.is_standard_layout() {
+            values
+        } else {
+            values.as_standard_layout().into_owned()
+        };
+        Matrix { values }
+    }
+
+    fn check_index(&self, row: usize, col: usize) {
         assert!(
-            row < self.rows && col < self.cols,
+            row < self.rows() && col < self.cols(),
             "({row}, {col}) is outside {self}"
         );
-        row * self.cols + col
     }
 }
 
 impl std::fmt::Display for Matrix {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "{} × {} matrix", self.rows, self.cols)
+        write!(formatter, "{} × {} matrix", self.rows(), self.cols())
     }
 }
 
@@ -342,6 +303,19 @@ mod tests {
     fn select_rows_copies_rows_in_the_given_order() {
         let a = matrix(&[&[1.0], &[2.0], &[3.0]]);
         assert_eq!(a.select_rows(&[2, 0, 2]), matrix(&[&[3.0], &[1.0], &[3.0]]));
+    }
+
+    #[test]
+    fn results_are_stored_row_after_row() {
+        let a = matrix(&[&[1.0, 2.0], &[3.0, 4.0], &[5.0, 6.0]]);
+        let b = matrix(&[&[1.0, 0.0], &[0.0, 1.0], &[1.0, 1.0]]);
+        assert_eq!(a.transpose_matmul(&b).data(), &[6.0, 8.0, 8.0, 10.0]);
+        assert_eq!(
+            a.matmul_transpose(&a).data(),
+            &[5.0, 11.0, 17.0, 11.0, 25.0, 39.0, 17.0, 39.0, 61.0]
+        );
+        assert_eq!(a.select_rows(&[2, 0]).data(), &[5.0, 6.0, 1.0, 2.0]);
+        assert_eq!(a.sum_rows().data(), &[9.0, 12.0]);
     }
 
     #[test]
