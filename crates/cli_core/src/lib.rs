@@ -30,9 +30,10 @@ pub trait Cli: Sized {
 }
 
 pub fn run<A: Cli>(app: impl FnOnce(A) -> Result<(), String>) -> ExitCode {
-    let result = A::try_parse_from(std::env::args_os()).and_then(|args| match args {
-        Some(args) => app(args),
-        None => {
+    let result = A::try_parse_from(std::env::args_os()).and_then(|args| {
+        if let Some(args) = args {
+            app(args)
+        } else {
             print!("{}", A::HELP);
             Ok(())
         }
