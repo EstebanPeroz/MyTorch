@@ -139,6 +139,9 @@ impl Matrix {
 
     pub fn select_rows(&self, indices: &[usize]) -> Matrix {
         assert!(!indices.is_empty(), "select_rows: no rows selected");
+        if let Some(row) = indices.iter().find(|&&row| row >= self.rows()) {
+            panic!("select_rows: row {row} is outside {self}");
+        }
         Matrix::wrap(self.values.select(Axis(0), indices))
     }
 
@@ -310,6 +313,12 @@ mod tests {
     fn select_rows_copies_rows_in_the_given_order() {
         let a = matrix(&[&[1.0], &[2.0], &[3.0]]);
         assert_eq!(a.select_rows(&[2, 0, 2]), matrix(&[&[3.0], &[1.0], &[3.0]]));
+    }
+
+    #[test]
+    #[should_panic(expected = "select_rows: row 3 is outside 3 × 1 matrix")]
+    fn select_rows_panics_outside_the_matrix() {
+        Matrix::zeros(3, 1).select_rows(&[0, 3]);
     }
 
     #[test]
