@@ -5,8 +5,8 @@ random numbers (see [dependencies.md](dependencies.md)). It knows nothing about 
 chessboards into numbers and labels into target vectors, and `my_torch` only sees matrices.
 
 What exists today: the `Matrix` type, the starting weights (`Initialization`), the activation functions
-(`Activation`), the dense layer (`Dense`), the losses (`Loss`), the network (`Network`) and the dataset
-(`Dataset`). The optimizer and the training loop come next.
+(`Activation`), the dense layer (`Dense`), the losses (`Loss`), the network (`Network`), the dataset
+(`Dataset`) and the optimizer (`Optimizer`). The training loop comes next.
 
 ## Numbers are `f32`
 
@@ -277,14 +277,29 @@ the answer the network should give for it. For XOR, the inputs are the four `[x1
 
 `select` picks the same rows from both matrices, so a sample never gets separated from its target.
 
+## Optimizers
+
+An optimizer decides how to change the weights once backpropagation has computed their gradients. `Optimizer`
+is a trait with one method, `step(&mut network, &gradients)`. It takes `&mut self` because some optimizers
+remember things between steps (Adam keeps a running average of past gradients); each optimizer is a struct in
+its own file under `optimizers/`.
+
+| Optimizer | Step | PyTorch |
+|---|---|---|
+| `Sgd` | every weight and bias: `parameter − learning_rate × gradient` | `torch.optim.SGD` |
+
+`Sgd::new(learning_rate)` refuses a learning rate that is not a positive number. The learning rate is the size
+of each step: too small and training crawls, too large and the loss jumps around or blows up instead of going
+down.
+
 ## Errors
 
 `from_vec` and `from_rows` refuse a matrix with no rows or no columns, rows of different lengths, and a number
 of values that does not match the shape. `Dense::new` refuses biases that are not one row of one value per
-neuron. `Dataset::new` refuses inputs and targets with different numbers of rows. `Network::new` refuses an
-empty list and layers whose sizes do not chain, and `predict` and `gradients` refuse inputs and targets of the
-wrong size. They return `Err(String)` without the `error:` prefix, like `Label`: the program that calls the
-library adds context and the prefix.
+neuron. `Dataset::new` refuses inputs and targets with different numbers of rows, and `Sgd::new` a learning
+rate that is not a positive number. `Network::new` refuses an empty list and layers whose sizes do not chain,
+and `predict` and `gradients` refuse inputs and targets of the wrong size. They return `Err(String)` without
+the `error:` prefix, like `Label`: the program that calls the library adds context and the prefix.
 
 The operations **panic** on mismatched shapes (for example `matmul` of a `2 × 3` by a `2 × 3`) and on indices
 outside the matrix. `Dense` panics on an input with the wrong number of columns and on a gradient of the wrong
