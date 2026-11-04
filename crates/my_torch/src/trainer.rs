@@ -72,7 +72,7 @@ impl Trainer {
         let activation = network.layers()[network.layers().len() - 1].activation();
         if self.loss.needs_raw_scores() && activation != Activation::Identity {
             return Err(format!(
-                "this loss applies softmax itself, so the output layer must be Identity, not {activation:?}"
+                "this loss needs raw scores, so the output layer must be Identity, not {activation:?}"
             ));
         }
         Ok(())
@@ -148,7 +148,7 @@ mod tests {
                 &mut StdRng::seed_from_u64(2)
             ),
             Err(
-                "this loss applies softmax itself, so the output layer must be Identity, not Sigmoid"
+                "this loss needs raw scores, so the output layer must be Identity, not Sigmoid"
                     .to_string()
             )
         );
