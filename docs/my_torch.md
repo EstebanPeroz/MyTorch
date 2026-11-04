@@ -105,7 +105,12 @@ Pair each activation with its initialization (see [Starting weights](#starting-w
 ## Dense layer
 
 `Dense` is a fully connected layer: every neuron reads every input. It holds its weights `W` (`in × out`), its
-biases `b` (one row of `out` values, one per neuron) and its activation `f`.
+biases `b` (one row of `out` values, one per neuron) and its activation `f`. Neuron `j` is column `j` of `W`
+and value `j` of `b`: storing the layer as one matrix lets a single product compute every neuron for every
+sample of the batch.
+
+The name comes from Keras, whose `Dense` layer also holds its activation. PyTorch calls the same layer
+`nn.Linear`, but without the activation, which is a separate layer there (`nn.ReLU`…).
 
 | Method | Result |
 |---|---|
@@ -154,9 +159,11 @@ change in the output, and compare with what `backward` returned.
 ## Errors
 
 `from_vec` and `from_rows` refuse a matrix with no rows or no columns, rows of different lengths, and a number
-of values that does not match the shape. They return `Err(String)` without the `error:` prefix, like `Label`:
-the program that calls the library adds context and the prefix.
+of values that does not match the shape. `Dense::new` refuses biases that are not one row of one value per
+neuron. They return `Err(String)` without the `error:` prefix, like `Label`: the program that calls the library
+adds context and the prefix.
 
 The operations **panic** on mismatched shapes (for example `matmul` of a `2 × 3` by a `2 × 3`) and on indices
-outside the matrix, and `Dense` panics on an input with the wrong number of columns. The types built on these
-check their sizes when they are created, so such a panic would be a bug in `my_torch`, not a user error.
+outside the matrix. `Dense` panics on an input with the wrong number of columns and on a gradient of the wrong
+shape in `backward`. The types built on these check their sizes when they are created, so such a panic would be
+a bug in `my_torch`, not a user error.

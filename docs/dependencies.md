@@ -1,8 +1,8 @@
 # Dependencies
 
 No neural network library (PyTorch, TensorFlow…) is used. Everything related to the network (layers,
-activations, losses, backpropagation, training) is written from scratch in `my_torch`. It uses
-`ndarray` for the matrix arithmetic and `rand` for random numbers. The programs use two other external crates.
+activations, losses, backpropagation, training) is written from scratch in `my_torch`. It uses `ndarray` for
+the matrix arithmetic and `rand` for random numbers. The programs use two other external crates.
 
 | Crate | Version | Used by | Purpose |
 |---|---|---|---|
