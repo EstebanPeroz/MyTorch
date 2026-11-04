@@ -36,7 +36,11 @@ impl Network {
     }
 
     pub fn output_size(&self) -> usize {
-        self.layers[self.layers.len() - 1].output_size()
+        self.output_layer().output_size()
+    }
+
+    pub fn output_layer(&self) -> &Dense {
+        &self.layers[self.layers.len() - 1]
     }
 
     pub fn layers(&self) -> &[Dense] {
@@ -234,6 +238,7 @@ mod tests {
         let network = network(3, &[(4, Activation::Relu), (2, Activation::Identity)], 1);
         assert_eq!((network.input_size(), network.output_size()), (3, 2));
         assert_eq!(network.layers().len(), 2);
+        assert_eq!(network.output_layer(), &network.layers()[1]);
     }
 
     #[test]

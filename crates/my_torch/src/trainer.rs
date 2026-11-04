@@ -69,7 +69,7 @@ impl Trainer {
     }
 
     fn check_output_layer(&self, network: &Network) -> Result<(), String> {
-        let activation = network.layers()[network.layers().len() - 1].activation();
+        let activation = network.output_layer().activation();
         if self.loss.needs_raw_scores() && activation != Activation::Identity {
             return Err(format!(
                 "this loss needs raw scores, so the output layer must be Identity, not {activation:?}"

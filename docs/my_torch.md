@@ -230,7 +230,7 @@ next one.
 | Method | Result |
 |---|---|
 | `Network::new(layers)` | a network from layers built with `Dense::random` or `Dense::new`; refuses an empty list and layers whose sizes do not chain |
-| `input_size()`, `output_size()`, `layers()` | reading the network |
+| `input_size()`, `output_size()`, `layers()`, `output_layer()` | reading the network; `output_layer()` is the last layer |
 | `predict(&x)` | the output of the last layer, one row per sample |
 | `gradients(&x, &targets, &loss)` | the loss on this batch, and the gradients (`Gradients`) of every layer |
 | `update(&gradients, rule)` | every layer's weights and biases replaced by `rule(parameter, gradient)` |
