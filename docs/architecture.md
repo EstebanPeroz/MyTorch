@@ -36,11 +36,11 @@ keeps the neural network module generic: it could learn any other problem.
   come from the network. Rule-based labeling only belongs in the dataset tooling.
 - **One file per type**, like a `.hpp` + `.cpp` pair: a type, its methods, its trait implementations and its
   unit tests live in the same file. A file is only split into a folder when it gets genuinely big.
-- **Families get a folder.** When several types do the same job in different ways (initializations,
-  activations), each one gets its own file in a plural folder (`initializations/`, `activations/`), next to a
-  file holding what they share: the trait, and helpers visible only inside the folder (`pub(super)`). `mod.rs`
-  only holds `mod` lines and `pub use`. Adding a member means adding a file, without editing a long `match`.
-  See [my_torch.md](my_torch.md).
+- **Families get a folder.** When several types do the same job in different ways (losses, initializations,
+  activations), each one gets its own file in a plural folder (`losses/`, `initializations/`, `activations/`),
+  next to a file holding what they share: the trait, and helpers visible only inside the folder (`pub(super)`).
+  `mod.rs` only holds `mod` lines and `pub use`. Adding a member means adding a file, without editing a long
+  `match`. See [my_torch.md](my_torch.md).
 - **Encapsulation:** fields are private and read through getters. Constructors validate their input, so an
   invalid value cannot exist (for example, a `NetworkRequest` with a count of 0).
 - **No duplication:** shared behavior goes into a trait or a shared crate (for example `cli_core::Cli`).

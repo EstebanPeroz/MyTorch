@@ -26,10 +26,10 @@ Each rule is tested in detail in one place only:
 - **Neural network math** (`my_torch`) is unit-tested in the file of each type: every formula against values
   computed by hand, and every derivative and gradient against measured slopes. To measure a slope, nudge a value
   by `±ε`, compute the result twice, and divide the difference by `2ε`; a wrong formula in `Activation`, in
-  `Dense::backward` or in `Loss` makes the two disagree.
-  Each family shares its checks with its members: `assert_slope_matches_finite_differences` in
-  `activations/activation.rs` and `assert_spread` in `initializations/initialization.rs`, so a new member is
-  tested with one line.
+  `Dense::backward` or in a loss makes the two disagree.
+  Each family shares its checks with its members: `assert_gradient_matches_finite_differences` in
+  `losses/loss.rs`, `assert_slope_matches_finite_differences` in `activations/activation.rs` and `assert_spread`
+  in `initializations/initialization.rs`, so a new member is tested with one line.
 
 Unit tests share their FEN strings through the test-only module `crates/my_torch_analyzer/src/test_fens.rs`.
 

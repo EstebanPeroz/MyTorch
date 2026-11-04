@@ -181,13 +181,21 @@ A loss turns the network's outputs into one number that says how wrong they are:
 targets, larger as they drift away. Training lowers it. Its gradient, how the loss changes with each output, is
 the first `dA` of backpropagation: the last layer's `backward` starts from it.
 
-| `Loss` | Value | Gradient (`dA` for the last layer) | For |
+| Loss | Value | Gradient (`dA` for the last layer) | For |
 |---|---|---|---|
 | `MeanSquaredError` | mean of `(output − target)²` over every value | `2 (output − target) / (n × outputs)` | outputs that are numbers to match (XOR) |
 | `SoftmaxCrossEntropy` | mean over samples of `−Σ target × log softmax(output)` | `(softmax(output) × Σ target − target) / n` | picking one class out of several |
 
-`loss.value(&outputs, &targets)` returns the number and `loss.gradient(&outputs, &targets)` returns the
-gradient, a matrix shaped like the outputs. Both panic if the targets are not shaped like the outputs.
+`Loss` is a trait with two methods: `value(&outputs, &targets)` returns the number, and
+`gradient(&outputs, &targets)` returns the gradient, a matrix shaped like the outputs. Each loss is a struct
+that implements it, in its own file under `losses/`: `MeanSquaredError.value(&outputs, &targets)`. Both
+methods panic if the targets are not shaped like the outputs; each loss starts with the shared
+`check_shapes`.
+
+Adding a loss means adding one file: a struct (with fields for its settings, such as Huber's `delta`), its
+`impl Loss`, and its tests, which reuse the shared measured-slope check from `losses/loss.rs`. Nothing else
+changes. Losses are a trait while activations are an enum because a network saves its activations in its file
+and must turn their names back into values, while the loss is only a training setting and is never saved.
 
 ### Softmax cross-entropy
 
