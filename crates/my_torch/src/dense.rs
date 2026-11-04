@@ -93,6 +93,13 @@ impl Dense {
         cache: &DenseCache,
         output_gradient: &Matrix,
     ) -> (Matrix, DenseGradients) {
+        assert!(
+            output_gradient.rows() == cache.z.rows()
+                && output_gradient.cols() == self.output_size(),
+            "a layer with {} outputs on {} samples cannot take a {output_gradient} as its gradient",
+            self.output_size(),
+            cache.z.rows()
+        );
         let z_gradient =
             output_gradient.zip_map(&self.activation.derivative(&cache.z), |g, d| g * d);
         let gradients = DenseGradients {
@@ -223,6 +230,16 @@ mod tests {
         assert_eq!(gradients.weights(), &matrix(&[&[1.0, 0.0], &[5.0, 0.0]]));
         assert_eq!(gradients.biases(), &matrix(&[&[3.0, 0.0]]));
         assert_eq!(input_gradient, matrix(&[&[1.0, 2.0], &[2.0, 4.0]]));
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "a layer with 2 outputs on 2 samples cannot take a 2 × 3 matrix as its gradient"
+    )]
+    fn backward_panics_on_a_gradient_of_the_wrong_shape() {
+        let dense = layer(Activation::Identity);
+        let (_, cache) = dense.forward_cached(&Matrix::zeros(2, 2));
+        dense.backward(&cache, &Matrix::zeros(2, 3));
     }
 
     #[test]
