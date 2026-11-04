@@ -329,6 +329,34 @@ last layer is not `Identity`.
 The loss and the optimizer are stored as `Box<dyn Loss>` and `Box<dyn Optimizer>`: the trainer works with any
 of them, and `fit` takes `&mut self` because an optimizer may update its own state at each step.
 
+## Example: XOR
+
+XOR outputs 1 when exactly one of its two inputs is 1. No straight line separates its two classes, so a single
+layer cannot learn it, but two layers can. `crates/my_torch/tests/xor.rs` trains this network:
+
+```rust
+use my_torch::*;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
+
+let mut rng = StdRng::seed_from_u64(42);
+let mut network = Network::new(vec![
+    Dense::random(2, 8, Activation::Tanh, &XavierNormal, &mut rng),
+    Dense::random(8, 1, Activation::Sigmoid, &XavierNormal, &mut rng),
+])?;
+let xor = Dataset::new(
+    Matrix::from_rows(&[[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]])?,
+    Matrix::from_rows(&[[0.0], [1.0], [1.0], [0.0]])?,
+)?;
+let mut trainer = Trainer::new(MeanSquaredError, Sgd::new(0.5)?, 2, 2000)?;
+let losses = trainer.fit(&mut network, &xor, &mut rng)?;
+let outputs = network.predict(xor.inputs())?;
+```
+
+After 2,000 epochs the last loss is under 0.05 and every output is on the right side of 0.5. The same test
+also learns XOR as two classes: an `Identity` output layer of 2 neurons, one-hot targets and
+`SoftmaxCrossEntropy`, where `outputs.argmax_rows()` gives the predicted class of each row.
+
 ## Errors
 
 `from_vec` and `from_rows` refuse a matrix with no rows or no columns, rows of different lengths, and a number

@@ -7,12 +7,13 @@ cargo test --workspace
 CI runs the same command on every push to `main` and on every pull request, whatever branch it targets
 (`.github/workflows/checks.yml`, step *Unit and end-to-end tests*), after the style hooks and `make`.
 
-## Two kinds of tests
+## Three kinds of tests
 
 | Kind | Where | What it checks |
 |---|---|---|
 | Unit tests | `#[cfg(test)] mod tests` at the bottom of the file they test | one type or function in isolation: parsed values, conversions, validation |
 | End-to-end tests | `crates/<program>/tests/` | the real binary, as a user runs it: exit code, stdout and stderr together |
+| Library tests | `crates/my_torch/tests/` | the library through its public API only, as another crate uses it |
 
 Each rule is tested in detail in one place only:
 
@@ -32,6 +33,12 @@ Each rule is tested in detail in one place only:
   in `initializations/initialization.rs`, so a new member is tested with one line.
   `network.rs` runs the same check on whole networks: every weight and bias of two 3-layer networks, one per
   loss, so a mistake in how backpropagation chains the layers fails too.
+- **Learning** is tested end to end in `crates/my_torch/tests/xor.rs`: a `2 → 8 → output` network must learn
+  XOR, once with one sigmoid output and mean squared error, once as two classes with softmax cross-entropy.
+  Each test checks the final loss and every prediction. XOR cannot be learned by a single layer, so passing
+  proves that the layers, backpropagation, the optimizer and the training loop work together. With 4 hidden
+  neurons, one seed in 20 got stuck in a poor solution; with 8, all 20 seeds learn it, so the test does not
+  depend on a lucky seed.
 
 Unit tests share their FEN strings through the test-only module `crates/my_torch_analyzer/src/test_fens.rs`.
 
