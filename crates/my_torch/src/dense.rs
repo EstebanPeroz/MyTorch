@@ -1,6 +1,6 @@
 use rand::rngs::StdRng;
 
-use crate::activation::Activation;
+use crate::activations::Activation;
 use crate::initializations::Initialization;
 use crate::matrix::{Matrix, Scalar};
 

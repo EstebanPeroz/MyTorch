@@ -109,6 +109,18 @@ Backpropagation multiplies the gradient by that slope at every layer, which is w
 Pair each activation with its initialization (see [Starting weights](#starting-weights)): `HeNormal` for `Relu`
 and `LeakyRelu`, `XavierNormal` for `Sigmoid` and `Tanh`.
 
+### How activations are organized
+
+Each activation's math (its value and its slope for one number) is a struct in its own file under
+`activations/`, implementing the internal `Function` trait. A layer does not store that struct: it stores an
+`Activation`, a small enum with one variant per activation. The enum can be copied, compared and saved by
+name in a network file, which a trait object (`Box<dyn …>`) could not do as easily. Its one `match` only
+routes each variant to its struct.
+
+Adding an activation means adding one file (its struct, its `impl Function` and its tests, which reuse the
+shared measured-slope check from `activations/activation.rs`), one variant in the enum, and one line in the
+`match`. The compiler points to the `match` if that line is missing.
+
 ## Dense layer
 
 `Dense` is a fully connected layer: every neuron reads every input. It holds its weights `W` (`in × out`), its
