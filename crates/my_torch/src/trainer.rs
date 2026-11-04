@@ -86,8 +86,15 @@ mod tests {
     use crate::initializations::XavierNormal;
     use crate::losses::{MeanSquaredError, SoftmaxCrossEntropy};
     use crate::matrix::Matrix;
+    use crate::network::Gradients;
     use crate::optimizers::Sgd;
     use rand::SeedableRng;
+
+    struct Frozen;
+
+    impl Optimizer for Frozen {
+        fn step(&mut self, _: &mut Network, _: &Gradients) {}
+    }
 
     fn network(output: Activation) -> Network {
         let mut rng = StdRng::seed_from_u64(1);
@@ -179,6 +186,24 @@ mod tests {
             .fit(&mut network, &data(), &mut StdRng::seed_from_u64(4))
             .unwrap();
         assert_eq!(history.len(), 3);
+    }
+
+    #[test]
+    fn weights_each_batch_loss_by_its_size() {
+        let mut network = network(Activation::Sigmoid);
+        let data = data();
+        let (whole, _) = network
+            .gradients(data.inputs(), data.targets(), &MeanSquaredError)
+            .unwrap();
+        let history = Trainer::new(MeanSquaredError, Frozen, 3, 1)
+            .unwrap()
+            .fit(&mut network, &data, &mut StdRng::seed_from_u64(6))
+            .unwrap();
+        assert!(
+            (history[0] - whole).abs() < 1e-6,
+            "{} instead of {whole}",
+            history[0]
+        );
     }
 
     #[test]

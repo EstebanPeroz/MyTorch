@@ -322,7 +322,10 @@ for each epoch:
 - **Reproducibility:** every random choice (starting weights, shuffling) comes from a `StdRng` created with an
   explicit seed. The same seed, data and settings train exactly the same network.
 
-`fit` returns the average loss of each epoch, to follow training or plot learning curves. It returns an error
+`fit` returns the average loss of each epoch, to follow training or plot learning curves. Each batch's loss is
+measured just before its step, so the value of an epoch averages a network that keeps changing: it is usually
+slightly higher than the loss of the network at the end of the epoch, as in Keras. Each batch counts in
+proportion to its number of samples, so a smaller last batch weighs less than a full one. It returns an error
 when the data does not fit the network (see [Network](#network)), or when the loss needs raw scores and the
 last layer is not `Identity`.
 
