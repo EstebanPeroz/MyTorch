@@ -135,8 +135,8 @@ mod tests {
 
     #[test]
     fn gradients_match_finite_differences() {
-        let outputs = matrix(&[&[0.3, -1.2, 2.0], &[0.5, 0.1, -0.4]]);
-        let targets = matrix(&[&[0.0, 0.0, 1.0], &[1.0, 0.0, 0.0]]);
+        let outputs = matrix(&[&[0.3, -1.2, 2.0], &[0.5, 0.1, -0.4], &[-0.7, 1.1, 0.2]]);
+        let targets = matrix(&[&[0.0, 0.0, 1.0], &[1.0, 0.0, 0.0], &[0.5, 0.0, 1.0]]);
         let step = 1e-2;
         for loss in ALL {
             let mut numeric = Matrix::zeros(outputs.rows(), outputs.cols());
