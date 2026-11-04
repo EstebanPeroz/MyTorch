@@ -6,7 +6,8 @@ chessboards into numbers and labels into target vectors, and `my_torch` only see
 
 What exists today: the `Matrix` type, the starting weights (`Initialization`), the activation functions
 (`Activation`), the dense layer (`Dense`), the losses (`Loss`), the network (`Network`), the dataset
-(`Dataset`) and the optimizer (`Optimizer`). The training loop comes next.
+(`Dataset`), the optimizer (`Optimizer`) and the training loop (`Trainer`). Saving and loading networks come
+next.
 
 ## Numbers are `f32`
 
@@ -187,7 +188,7 @@ the first `dA` of backpropagation: the last layer's `backward` starts from it.
 | `MeanSquaredError` | mean of `(output − target)²` over every value | `2 (output − target) / (n × outputs)` | outputs that are numbers to match (XOR) |
 | `SoftmaxCrossEntropy` | mean over samples of `−Σ target × log softmax(output)` | `(softmax(output) × Σ target − target) / n` | picking one class out of several |
 
-`Loss` is a trait with two methods: `value(&outputs, &targets)` returns the number, and
+`Loss` is a trait: `value(&outputs, &targets)` returns the number, and
 `gradient(&outputs, &targets)` returns the gradient, a matrix shaped like the outputs. Each loss is a struct
 that implements it, in its own file under `losses/`: `MeanSquaredError.value(&outputs, &targets)`. Both
 methods panic if the targets are not shaped like the outputs; each loss starts with the shared
@@ -212,7 +213,9 @@ for the second of three classes).
 
 The loss applies softmax itself, so the network's last layer must be `Identity`: it outputs raw scores. A
 `Sigmoid` or `Relu` last layer would squash or cut the scores before softmax sees them. The largest raw score
-is also the predicted class, so predictions do not need softmax at all.
+is also the predicted class, so predictions do not need softmax at all. The `Loss` trait has a third method
+for this, `needs_raw_scores()`: `false` by default, `true` for `SoftmaxCrossEntropy`. `Trainer::fit` refuses
+to train when the loss needs raw scores and the last layer is not `Identity`.
 
 Softmax subtracts each row's largest score before `exp`. It gives the same probabilities, but `e¹⁰⁰⁰` would
 overflow `f32` while `e⁰` does not: huge scores (±1000) give finite values.
@@ -292,14 +295,50 @@ its own file under `optimizers/`.
 of each step: too small and training crawls, too large and the loss jumps around or blows up instead of going
 down.
 
+## Training
+
+`Trainer` holds the training settings: a loss, an optimizer, a batch size and a number of epochs.
+`Trainer::new(loss, optimizer, batch_size, epochs)` refuses a batch size or an epoch count of 0.
+`trainer.fit(&mut network, &dataset, &mut rng)` trains the network in place and runs mini-batch gradient
+descent:
+
+```
+for each epoch:
+    shuffle the sample order
+    for each group of batch_size samples:
+        gradients: forward, loss, backpropagation
+        one optimizer step on every weight and bias
+    record the average loss of the epoch
+```
+
+- **An epoch** is one pass over every sample. With 723,019 samples and batches of 64, it makes about 11,300
+  updates.
+- **Mini-batches** are a compromise. A step on the whole dataset is precise but leaves one update per epoch. A
+  step per sample is noisy and does not benefit from matrix products. A batch of a few dozen samples gives
+  many fairly reliable steps, and its noise helps leave poor solutions. The last batch of an epoch is smaller
+  when the batch size does not divide the number of samples.
+- **Shuffling** before each epoch changes which samples go together. Without it, sorted data (all `Nothing`,
+  then all `Check`…) would pull the weights one way, then the other.
+- **Reproducibility:** every random choice (starting weights, shuffling) comes from a `StdRng` created with an
+  explicit seed. The same seed, data and settings train exactly the same network.
+
+`fit` returns the average loss of each epoch, to follow training or plot learning curves. It returns an error
+when the data does not fit the network (see [Network](#network)), or when the loss needs raw scores and the
+last layer is not `Identity`.
+
+The loss and the optimizer are stored as `Box<dyn Loss>` and `Box<dyn Optimizer>`: the trainer works with any
+of them, and `fit` takes `&mut self` because an optimizer may update its own state at each step.
+
 ## Errors
 
 `from_vec` and `from_rows` refuse a matrix with no rows or no columns, rows of different lengths, and a number
 of values that does not match the shape. `Dense::new` refuses biases that are not one row of one value per
 neuron. `Dataset::new` refuses inputs and targets with different numbers of rows, and `Sgd::new` a learning
-rate that is not a positive number. `Network::new` refuses an empty list and layers whose sizes do not chain,
-and `predict` and `gradients` refuse inputs and targets of the wrong size. They return `Err(String)` without
-the `error:` prefix, like `Label`: the program that calls the library adds context and the prefix.
+rate that is not a positive number. `Trainer::new` refuses a batch size or an epoch count of 0, and
+`Trainer::fit` a loss that needs raw scores on a last layer that is not `Identity`. `Network::new` refuses an
+empty list and layers whose sizes do not chain, and `predict` and `gradients` refuse inputs and targets of the
+wrong size. They return `Err(String)` without the `error:` prefix, like `Label`: the program that calls the
+library adds context and the prefix.
 
 The operations **panic** on mismatched shapes (for example `matmul` of a `2 × 3` by a `2 × 3`) and on indices
 outside the matrix. `Dense` panics on an input with the wrong number of columns and on a gradient of the wrong

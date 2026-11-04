@@ -28,6 +28,10 @@ impl Loss for SoftmaxCrossEntropy {
         }
         Matrix::from_vec(outputs.rows(), outputs.cols(), values).expect("same shape as the outputs")
     }
+
+    fn needs_raw_scores(&self) -> bool {
+        true
+    }
 }
 
 impl SoftmaxCrossEntropy {
@@ -75,6 +79,11 @@ mod tests {
         let wrong = SoftmaxCrossEntropy.value(&matrix(&[&[5.0, 0.0, 0.0]]), &targets);
         assert!(right < 0.02, "{right}");
         assert!(wrong > 5.0, "{wrong}");
+    }
+
+    #[test]
+    fn needs_raw_scores_since_it_applies_softmax_itself() {
+        assert!(SoftmaxCrossEntropy.needs_raw_scores());
     }
 
     #[test]

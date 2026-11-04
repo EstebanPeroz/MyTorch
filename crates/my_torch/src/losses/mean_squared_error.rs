@@ -45,6 +45,11 @@ mod tests {
     }
 
     #[test]
+    fn works_on_any_output_layer() {
+        assert!(!MeanSquaredError.needs_raw_scores());
+    }
+
+    #[test]
     fn gradient_matches_finite_differences() {
         let outputs = matrix(&[&[0.3, -1.2, 2.0], &[0.5, 0.1, -0.4]]);
         let targets = matrix(&[&[0.0, 0.0, 1.0], &[1.0, 0.5, 0.0]]);

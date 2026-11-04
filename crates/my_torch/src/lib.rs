@@ -6,6 +6,7 @@ mod losses;
 mod matrix;
 mod network;
 mod optimizers;
+mod trainer;
 
 pub use activations::Activation;
 pub use dataset::Dataset;
@@ -15,3 +16,4 @@ pub use losses::{Loss, MeanSquaredError, SoftmaxCrossEntropy};
 pub use matrix::{Matrix, Scalar};
 pub use network::{Gradients, Network};
 pub use optimizers::{Optimizer, Sgd};
+pub use trainer::Trainer;

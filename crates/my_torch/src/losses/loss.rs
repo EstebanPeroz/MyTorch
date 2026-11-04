@@ -4,6 +4,10 @@ pub trait Loss {
     fn value(&self, outputs: &Matrix, targets: &Matrix) -> Scalar;
 
     fn gradient(&self, outputs: &Matrix, targets: &Matrix) -> Matrix;
+
+    fn needs_raw_scores(&self) -> bool {
+        false
+    }
 }
 
 pub(super) fn check_shapes(outputs: &Matrix, targets: &Matrix) {
