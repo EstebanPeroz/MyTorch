@@ -5,7 +5,7 @@ random numbers (see [dependencies.md](dependencies.md)). It knows nothing about 
 chessboards into numbers and labels into target vectors, and `my_torch` only sees matrices.
 
 What exists today: the `Matrix` type, the starting weights (`Initialization`), the activation functions
-(`Activation`) and the dense layer (`Dense`). Losses, the network and training come next.
+(`Activation`), the dense layer (`Dense`) and the losses (`Loss`). The network and training come next.
 
 ## Numbers are `f32`
 
@@ -174,6 +174,41 @@ A layer never changes while it computes: the weights only change in `update`, af
 
 The tests check `backward` against measured slopes: nudge each weight, bias and input by `±0.01`, compute the
 change in the output, and compare with what `backward` returned.
+
+## Losses
+
+A loss turns the network's outputs into one number that says how wrong they are: 0 when they match the
+targets, larger as they drift away. Training lowers it. Its gradient, how the loss changes with each output, is
+the first `dA` of backpropagation: the last layer's `backward` starts from it.
+
+| `Loss` | Value | Gradient (`dA` for the last layer) | For |
+|---|---|---|---|
+| `MeanSquaredError` | mean of `(output − target)²` over every value | `2 (output − target) / (n × outputs)` | outputs that are numbers to match (XOR) |
+| `SoftmaxCrossEntropy` | mean over samples of `−Σ target × log softmax(output)` | `(softmax(output) × Σ target − target) / n` | picking one class out of several |
+
+`loss.value(&outputs, &targets)` returns the number and `loss.gradient(&outputs, &targets)` returns the
+gradient, a matrix shaped like the outputs. Both panic if the targets are not shaped like the outputs.
+
+### Softmax cross-entropy
+
+For classes, the target of a sample is one-hot: a `1` in the column of its class, `0` elsewhere (`[0, 1, 0]`
+for the second of three classes).
+
+- **Softmax** turns a row of raw scores into probabilities that add up to 1: `softmax(x)ᵢ = eˣⁱ / Σⱼ eˣʲ`. The
+  largest score gets the largest probability.
+- **Cross-entropy** is then `−log(probability of the right class)`: close to 0 when the network gives the right
+  class a probability near 1, and large when it gives it almost none.
+- **The gradient** of both together is simply `(softmax − target) / n` for one-hot targets: push the right
+  class's probability up, and every other one down.
+
+The loss applies softmax itself, so the network's last layer must be `Identity`: it outputs raw scores. A
+`Sigmoid` or `Relu` last layer would squash or cut the scores before softmax sees them. The largest raw score
+is also the predicted class, so predictions do not need softmax at all.
+
+Softmax subtracts each row's largest score before `exp`. It gives the same probabilities, but `e¹⁰⁰⁰` would
+overflow `f32` while `e⁰` does not: huge scores (±1000) give finite values.
+
+PyTorch names the same two losses `nn.MSELoss` and `nn.CrossEntropyLoss` (which also applies softmax itself).
 
 ## Errors
 
