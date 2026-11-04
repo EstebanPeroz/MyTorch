@@ -23,6 +23,10 @@ Each rule is tested in detail in one place only:
   unit-tested in `board.rs`, `sample.rs` and `chess_file.rs`. The end-to-end tests only check one case per
   kind of error, to prove that each mode reads the file with the right rules (labels required with
   `--train`, optional with `--predict`) and that its errors exit with 84.
+- **Neural network math** (`my_torch`) is unit-tested in the file of each type: every formula against values
+  computed by hand, and every derivative and gradient against measured slopes. To measure a slope, nudge a value
+  by `±ε`, compute the result twice, and divide the difference by `2ε`; a wrong formula in `Activation` or in
+  `Dense::backward` makes the two disagree.
 
 Unit tests share their FEN strings through the test-only module `crates/my_torch_analyzer/src/test_fens.rs`.
 
