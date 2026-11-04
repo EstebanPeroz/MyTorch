@@ -30,6 +30,8 @@ Each rule is tested in detail in one place only:
   Each family shares its checks with its members: `assert_gradient_matches_finite_differences` in
   `losses/loss.rs`, `assert_slope_matches_finite_differences` in `activations/activation.rs` and `assert_spread`
   in `initializations/initialization.rs`, so a new member is tested with one line.
+  `network.rs` runs the same check on whole networks: every weight and bias of two 3-layer networks, one per
+  loss, so a mistake in how backpropagation chains the layers fails too.
 
 Unit tests share their FEN strings through the test-only module `crates/my_torch_analyzer/src/test_fens.rs`.
 

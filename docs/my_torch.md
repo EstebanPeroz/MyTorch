@@ -5,7 +5,8 @@ random numbers (see [dependencies.md](dependencies.md)). It knows nothing about 
 chessboards into numbers and labels into target vectors, and `my_torch` only sees matrices.
 
 What exists today: the `Matrix` type, the starting weights (`Initialization`), the activation functions
-(`Activation`), the dense layer (`Dense`) and the losses (`Loss`). The network and training come next.
+(`Activation`), the dense layer (`Dense`), the losses (`Loss`) and the network (`Network`). Training comes
+next.
 
 ## Numbers are `f32`
 
@@ -218,14 +219,60 @@ overflow `f32` while `e⁰` does not: huge scores (±1000) give finite values.
 
 PyTorch names the same two losses `nn.MSELoss` and `nn.CrossEntropyLoss` (which also applies softmax itself).
 
+## Network
+
+`Network` holds layers in order, like PyTorch's `nn.Sequential`: the output of each layer is the input of the
+next one.
+
+| Method | Result |
+|---|---|
+| `Network::new(layers)` | a network from layers built with `Dense::random` or `Dense::new`; refuses an empty list and layers whose sizes do not chain |
+| `input_size()`, `output_size()`, `layers()` | reading the network |
+| `predict(&x)` | the output of the last layer, one row per sample |
+| `gradients(&x, &targets, &loss)` | the loss on this batch, and the gradients (`Gradients`) of every layer |
+| `update(&gradients, rule)` | every layer's weights and biases replaced by `rule(parameter, gradient)` |
+
+```rust
+let mut rng = StdRng::seed_from_u64(42);
+let network = Network::new(vec![
+    Dense::random(2, 4, Activation::Tanh, &XavierNormal, &mut rng),
+    Dense::random(4, 1, Activation::Sigmoid, &XavierNormal, &mut rng),
+])?;
+```
+
+Each layer is built with its own initialization, so it can match its activation.
+
+`gradients` runs backpropagation:
+
+1. **Forward:** each layer's `forward_cached`, from the first to the last, keeping every `DenseCache`.
+2. **Loss:** its value on the last layer's output, and its gradient, the first `dA`.
+3. **Backward:** each layer's `backward`, from the last to the first. The `dX` a layer returns is the `dA` of
+   the layer before it.
+
+It returns the gradients without changing the network: the optimizer then decides how to apply them with
+`update`.
+
+`predict` and `gradients` return an error when the inputs do not have `input_size()` columns, when the targets
+do not have `output_size()` columns, or when there are not as many targets as samples. These sizes come from
+the user's files (a network file and a CHESSFILE), so a mismatch is a user error, not a bug.
+
+### Gradient check
+
+The network's tests check every gradient that backpropagation computes against a direct measurement: nudge one
+weight or bias by `±0.01`, compute the loss twice, and take the slope `(loss(w + 0.01) − loss(w − 0.01)) / 0.02`.
+They do this for every weight and bias of two `3 → 4 → 3 → 2` networks on a batch of 5 samples: a classifier
+(`Tanh`, `Sigmoid`, `Identity`) with softmax cross-entropy, and one with sigmoid outputs and mean squared error.
+
 ## Errors
 
 `from_vec` and `from_rows` refuse a matrix with no rows or no columns, rows of different lengths, and a number
 of values that does not match the shape. `Dense::new` refuses biases that are not one row of one value per
-neuron. They return `Err(String)` without the `error:` prefix, like `Label`: the program that calls the library
-adds context and the prefix.
+neuron. `Network::new` refuses an empty list and layers whose sizes do not chain, and `predict` and `gradients`
+refuse inputs and targets of the wrong size. They return `Err(String)` without the `error:` prefix, like
+`Label`: the program that calls the library adds context and the prefix.
 
 The operations **panic** on mismatched shapes (for example `matmul` of a `2 × 3` by a `2 × 3`) and on indices
 outside the matrix. `Dense` panics on an input with the wrong number of columns and on a gradient of the wrong
-shape in `backward`. The types built on these check their sizes when they are created, so such a panic would be
-a bug in `my_torch`, not a user error.
+shape in `backward`, and `Network::update` on gradients from a network with another number of layers. The types
+built on these check their sizes when they are created, so such a panic would be a bug in `my_torch`, not a
+user error.
