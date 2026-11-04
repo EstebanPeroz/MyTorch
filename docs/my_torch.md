@@ -63,17 +63,24 @@ receive the same gradient, and stay identical forever. So they start random, dra
 
 How wide that bell curve is matters. Each neuron adds up `in` weighted inputs, so with weights that are too
 large the sums grow from layer to layer and the activations saturate; too small, and they shrink towards 0. Both
-stall learning. `Initialization` picks a standard deviation from the layer's size that keeps the values at the
-same scale through the layers:
+stall learning. Each initialization picks a standard deviation from the layer's size that keeps the values at
+the same scale through the layers:
 
-| Method | Standard deviation | For |
-|---|---|---|
-| `Initialization::Xavier` | `√(2 / (in + out))` | `Sigmoid`, `Tanh` |
-| `Initialization::He` | `√(2 / in)` | `ReLU` |
+| Initialization | Standard deviation | For | PyTorch |
+|---|---|---|---|
+| `XavierNormal` | `√(2 / (in + out))` | `Sigmoid`, `Tanh` | `nn.init.xavier_normal_` |
+| `HeNormal` | `√(2 / in)` | `Relu`, `LeakyRelu` | `nn.init.kaiming_normal_` |
 
-`init.weights(in, out, &mut rng)` returns an `in × out` matrix of such weights. The generator is a
+`Initialization` is a trait with one method: `weights(in, out, &mut rng)` returns an `in × out` matrix of
+starting weights, for example `HeNormal.weights(768, 128, &mut rng)`. The generator is a
 `rand::rngs::StdRng` created with `StdRng::seed_from_u64(seed)`: the same seed always gives the same weights.
 It panics on a layer with no inputs or no outputs.
+
+Each initialization is a struct in its own file under `initializations/`. Both current ones draw from a bell
+curve, so they share `normal_weights` from `initializations/initialization.rs` and only give their standard
+deviation. Adding one, such as a uniform version (`xavier_uniform_`), means adding one file: a struct, its
+`impl Initialization` and its tests. The names end in `Normal`, as in Keras, because each also exists in a
+uniform version.
 
 ## Activations
 
@@ -99,8 +106,8 @@ Backpropagation multiplies the gradient by that slope at every layer, which is w
   of 0 and stops learning. `LeakyRelu` keeps a small slope there.
 - At exactly `x = 0`, `Relu` and `LeakyRelu` have no slope; they use the one of the negative side.
 
-Pair each activation with its initialization (see [Starting weights](#starting-weights)): `He` for `Relu` and
-`LeakyRelu`, `Xavier` for `Sigmoid` and `Tanh`.
+Pair each activation with its initialization (see [Starting weights](#starting-weights)): `HeNormal` for `Relu`
+and `LeakyRelu`, `XavierNormal` for `Sigmoid` and `Tanh`.
 
 ## Dense layer
 
@@ -115,7 +122,7 @@ The name comes from Keras, whose `Dense` layer also holds its activation. PyTorc
 | Method | Result |
 |---|---|
 | `Dense::new(weights, biases, activation)` | a layer from existing values; refuses biases that are not `1 × out` |
-| `Dense::random(in, out, activation, initialization, &mut rng)` | a new layer: random weights, biases at 0 |
+| `Dense::random(in, out, activation, &initialization, &mut rng)` | a new layer: random weights, biases at 0 |
 | `input_size()`, `output_size()`, `weights()`, `biases()`, `activation()` | reading the layer |
 | `forward(&x)` | the layer's output, for predictions |
 | `forward_cached(&x)` | the same output, plus a `DenseCache` that `backward` needs |

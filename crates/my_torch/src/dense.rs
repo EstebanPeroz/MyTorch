@@ -1,7 +1,7 @@
 use rand::rngs::StdRng;
 
 use crate::activation::Activation;
-use crate::initialization::Initialization;
+use crate::initializations::Initialization;
 use crate::matrix::{Matrix, Scalar};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -44,7 +44,7 @@ impl Dense {
         inputs: usize,
         outputs: usize,
         activation: Activation,
-        initialization: Initialization,
+        initialization: &impl Initialization,
         rng: &mut StdRng,
     ) -> Dense {
         Dense {
@@ -138,6 +138,7 @@ impl DenseGradients {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::initializations::XavierNormal;
     use rand::SeedableRng;
 
     fn matrix(rows: &[&[Scalar]]) -> Matrix {
@@ -185,7 +186,7 @@ mod tests {
             3,
             2,
             Activation::Tanh,
-            Initialization::Xavier,
+            &XavierNormal,
             &mut StdRng::seed_from_u64(5),
         );
         assert_eq!((dense.input_size(), dense.output_size()), (3, 2));
