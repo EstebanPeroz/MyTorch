@@ -44,6 +44,8 @@ Each rule is tested in detail in one place only:
   sequences of losses) and in `trainer.rs`: on random-noise data, which can only be learned by heart, the
   validation loss rises, training stops `patience` epochs after the best one, and the network that comes back
   gives exactly the best validation loss.
+- **Configurations** are unit-tested in `model_config.rs`: the seed of each generated network, the training
+  section written into its network file, and one broken configuration per kind of error.
 - **Network files** are unit-tested in `model.rs`: the exact JSON written for a small network, a save and load
   that keeps every weight to the bit (including `f32::MAX` and the smallest numbers), the refusal to save NaN,
   one broken file per kind of error, each derived from the valid file by changing one field, and a save that

@@ -12,8 +12,8 @@ external crates.
 | [ndarray](https://docs.rs/ndarray) | 0.17.2 | `my_torch` (`matrix.rs` only) | matrix arithmetic |
 | [rand](https://docs.rs/rand) | 0.10.3 | `my_torch` | seeded random numbers |
 | [rand_distr](https://docs.rs/rand_distr) | 0.6.0 | `my_torch` | the normal distribution |
-| [serde](https://serde.rs) | 1.0.229 | `my_torch` (`model.rs` only) | turning Rust structs into a file format and back |
-| [serde_json](https://docs.rs/serde_json) | 1.0.154 | `my_torch` (`model.rs` only) | the JSON format of network files |
+| [serde](https://serde.rs) | 1.0.229 | `my_torch` (network and configuration files only) | turning Rust structs into a file format and back |
+| [serde_json](https://docs.rs/serde_json) | 1.0.154 | `my_torch` (network and configuration files only) | the JSON format of network and configuration files |
 
 ## clap
 
@@ -119,8 +119,9 @@ larger than binary ones, which still load in milliseconds.
 
 **What to know when using it:**
 
-- Only `model.rs` uses `serde`: private structs (`ModelFile`, `LayerFile`…) describe the file, and are converted
-  to and from `Model`. No public type derives `Serialize` or `Deserialize`, so `serde` stays out of the API.
+- Only `model.rs`, `model_config.rs` and `training_file.rs` use `serde`: private structs (`ModelFile`,
+  `LayerFile`, `TrainingFile`…) describe the files, and are converted to and from `Model` and `ModelConfig`.
+  No public type derives `Serialize` or `Deserialize`, so `serde` stays out of the API.
 - `serde_json` writes each `f32` with the shortest text that reads back as the same `f32`, so weights survive a
   save and load exactly. It writes NaN and infinity as `null`, which is why `save` refuses them.
 - `#[serde(deny_unknown_fields)]` turns a misspelled field into an error. It does not work together with

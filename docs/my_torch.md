@@ -8,7 +8,7 @@ What exists today: the `Matrix` type, the random number generator (`Rng`), the s
 (`Initialization`), the activation functions (`Activation`), the dense layer (`Dense`), the losses (`Loss`), the
 network (`Network`) and its plan (`Architecture`), the dataset (`Dataset`), the optimizer (`Optimizer`), the
 training loop (`Trainer`) with early stopping against overfitting, and the model (`Model`): a network with its
-training settings, saved to and loaded from a file.
+training settings, saved to and loaded from a file, and generated from a configuration file (`ModelConfig`).
 
 ## Numbers are `f32`
 
@@ -487,6 +487,54 @@ already holds.
 - **Size:** about 12 characters per weight or bias, so about 1.2 MB per 100,000. A `768 → 128 → 64 → 7`
   network (107,143 weights and biases) makes a 1.3 MB file, written in 6 ms and read in 8 ms (release build).
 
+## Configurations
+
+A `ModelConfig` describes models to generate, without their weights: the plan of the network and its training
+settings. It is read from a JSON file, the configuration file of the generator:
+
+```json
+{
+  "inputs": 768,
+  "layers": [
+    { "neurons": 128, "activation": "relu", "initialization": "he_normal" },
+    { "neurons": 7, "activation": "identity", "initialization": "xavier_normal" }
+  ],
+  "training": {
+    "loss": "softmax_cross_entropy",
+    "optimizer": { "name": "sgd", "learning_rate": 0.01 },
+    "batch_size": 64,
+    "epochs": 100,
+    "seed": 42,
+    "early_stopping": { "validation": 0.1, "patience": 5 }
+  }
+}
+```
+
+| Field | Content |
+|---|---|
+| `inputs` | the number of inputs of the network |
+| `layers` | one object per layer, in order: its number of neurons, its activation and its initialization, by name (see [Names](#names)) |
+| `training` | exactly the `training` section of a [network file](#network-files) |
+
+| Method | Result |
+|---|---|
+| `ModelConfig::load(path)`, `ModelConfig::from_json(&text)` | a configuration, read from a file or a string |
+| `architecture()`, `seed()` | reading it |
+| `generate(index)` | a new `Model`: the network is built from the plan with the seed `seed + index`, and the model keeps that seed |
+
+- **One seed per network:** network 0 uses `seed`, network 1 `seed + 1`, and so on, for its starting weights
+  and for the shuffle of its training. Networks from the same configuration differ, and generating them again
+  gives exactly the same files.
+- **Checked when read:** `load` builds every part once (the layers, the trainer, and a first model), so a
+  mistake is reported before any network is generated, and `generate` cannot fail. A loss that needs raw scores
+  with a last layer that is not `Identity` is refused here too.
+- **Errors** name the layer or the field, as for network files: `layer 2: unknown initialization "uniform",
+  expected one of: xavier_normal, he_normal`. `load` puts the path of the file in front.
+- The `training` section is read by the same code as in network files (`training_file.rs`), so the two formats
+  cannot drift apart. The only difference: in a configuration, `seed` is the first seed of a series.
+
+Keras describes a model the same way with `get_config` and `from_config`.
+
 ## Names
 
 Files describe activations, initializations, losses and optimizers by name. Each one gives its own name, and
@@ -550,9 +598,10 @@ share. `EarlyStopping::new` refuses a validation share that is not strictly betw
 of layers, and `LayerSpec::new` a layer of 0 neurons. `Model::new` refuses a loss that needs raw scores on a
 last layer that is not `Identity`, and `Model::load` a file that cannot be read or is not a valid network file
 (see [Network files](#network-files)); `save` refuses a file that cannot be written and weights that are not
-finite numbers. The name lookups refuse unknown names, and `optimizer_from_settings` a missing or unknown
-setting. They return `Err(String)` without the `error:` prefix, like `Label`: the program that calls the library
-adds context and the prefix.
+finite numbers. `ModelConfig::load` refuses a file that cannot be read and a configuration that is not valid,
+for the same reasons as a network file. The name lookups refuse unknown names, and `optimizer_from_settings` a
+missing or unknown setting. They return `Err(String)` without the `error:` prefix, like `Label`: the program
+that calls the library adds context and the prefix.
 
 The operations **panic** on mismatched shapes (for example `matmul` of a `2 × 3` by a `2 × 3`) and on indices
 outside the matrix. `Dense` panics on an input with the wrong number of columns and on a gradient of the wrong

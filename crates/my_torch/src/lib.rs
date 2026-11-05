@@ -8,6 +8,7 @@ mod initializations;
 mod losses;
 mod matrix;
 mod model;
+mod model_config;
 mod names;
 mod network;
 mod optimizers;
@@ -25,6 +26,7 @@ pub use initializations::{HeNormal, Initialization, XavierNormal, initialization
 pub use losses::{Loss, MeanSquaredError, SoftmaxCrossEntropy, loss_from_name};
 pub use matrix::{Matrix, Scalar};
 pub use model::Model;
+pub use model_config::ModelConfig;
 pub use network::{Gradients, Network};
 pub use optimizers::{Optimizer, Sgd, optimizer_from_settings};
 pub use rng::Rng;
