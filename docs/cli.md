@@ -102,6 +102,7 @@ writes `nb` networks named after it, in the current directory:
 | Every configuration file is read before any network is written | a broken file in the last pair leaves no half-done output |
 | An existing file with the same name is replaced | as when a program writes its output again |
 | Two configuration files with the same name (`a/basic.conf`, `b/basic.conf`) write the same files | the second pair replaces the networks of the first |
+| Network files at the root of the repository are ignored by git, except `my_torch_network*.nn` | networks generated to try things out cannot be committed by mistake, while the trained network, whose name must start with `my_torch_network`, can |
 
 Errors name the file, then the problem, and exit with 84:
 
