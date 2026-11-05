@@ -42,7 +42,8 @@ Each rule is tested in detail in one place only:
   gives the same predictions and can keep training.
 - **Network files** are unit-tested in `model.rs`: the exact JSON written for a small network, a save and load
   that keeps every weight to the bit (including `f32::MAX` and the smallest numbers), the refusal to save NaN,
-  and one broken file per kind of error, each derived from the valid file by changing one field.
+  one broken file per kind of error, each derived from the valid file by changing one field, and a save that
+  fails halfway (a folder blocks its temporary file) without touching the previous file.
 
 Unit tests share their FEN strings through the test-only module `crates/my_torch_analyzer/src/test_fens.rs`.
 

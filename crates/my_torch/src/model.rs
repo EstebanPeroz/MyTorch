@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -90,8 +90,13 @@ impl Model {
     pub fn save(&self, path: impl AsRef<Path>) -> Result<(), String> {
         let path = path.as_ref();
         let json = self.to_json()?;
-        fs::write(path, json + "\n")
-            .map_err(|error| format!("cannot write {}: {error}", path.display()))
+        let temporary = temporary_path(path);
+        fs::write(&temporary, json + "\n")
+            .and_then(|()| fs::rename(&temporary, path))
+            .map_err(|error| {
+                let _ = fs::remove_file(&temporary);
+                format!("cannot write {}: {error}", path.display())
+            })
     }
 
     pub fn load(path: impl AsRef<Path>) -> Result<Model, String> {
@@ -187,6 +192,12 @@ fn check_finite(layer: &Dense) -> Result<(), String> {
         return Err("a weight or bias is not a finite number".into());
     }
     Ok(())
+}
+
+fn temporary_path(path: &Path) -> PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(".tmp");
+    PathBuf::from(name)
 }
 
 fn invalid_file(error: serde_json::Error) -> String {
@@ -402,6 +413,51 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
         assert_eq!(text, format!("{SMALL}\n"));
         assert_eq!(loaded.unwrap().to_json(), Ok(SMALL.to_string()));
+    }
+
+    #[test]
+    fn saving_replaces_the_previous_file() {
+        let path = temporary("replaced");
+        Model::new(network(Activation::Identity), trainer(), 3)
+            .unwrap()
+            .save(&path)
+            .unwrap();
+        small().save(&path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(text, format!("{SMALL}\n"));
+        assert!(!temporary_path(&path).exists());
+    }
+
+    #[test]
+    fn a_failed_save_keeps_the_previous_file() {
+        let path = temporary("kept");
+        std::fs::write(&path, "previous network").unwrap();
+        let blocked = temporary_path(&path);
+        std::fs::create_dir(&blocked).unwrap();
+        let error = small().save(&path).err().unwrap_or_default();
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::remove_dir(&blocked).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert!(
+            error.starts_with(&format!("cannot write {}: ", path.display())),
+            "{error}"
+        );
+        assert_eq!(text, "previous network");
+    }
+
+    #[test]
+    fn a_failed_save_leaves_no_temporary_file() {
+        let path = temporary("folder_in_the_way");
+        std::fs::create_dir(&path).unwrap();
+        let error = small().save(&path).err().unwrap_or_default();
+        let leftover = temporary_path(&path).exists();
+        std::fs::remove_dir(&path).unwrap();
+        assert!(
+            error.starts_with(&format!("cannot write {}: ", path.display())),
+            "{error}"
+        );
+        assert!(!leftover);
     }
 
     #[test]

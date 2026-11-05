@@ -441,6 +441,10 @@ already holds.
 - **A network whose training diverged cannot be saved.** JSON has no NaN or infinity, so `save` refuses a
   weight or bias that is not a finite number instead of writing a file that could not be loaded. Loading
   refuses them too: `serde_json` reads a number too large for an `f32`, such as `1e39`, as infinity.
+- **A failed save never loses the previous file.** `save` writes to `path.tmp` first, then renames it over
+  `path`, which replaces the file in one step. If writing fails (full disk, no permission), the temporary file
+  is removed and the previous file is untouched. This matters because training saves into the file it loaded
+  when no other file is given.
 - **Loading checks everything** by going through the same constructors as code: `Activation::from_name`,
   `Matrix::from_rows`, `Dense::new`, `Network::new`, the name lookups, `Trainer::new` and `Model::new`. A
   file can therefore not create a network that code could not, and each problem gives the usual message,
