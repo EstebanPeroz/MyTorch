@@ -165,6 +165,16 @@ fn reports_configurations_that_cannot_be_used() {
 }
 
 #[test]
+fn reports_networks_that_cannot_be_saved() {
+    let folder = Folder::new("blocked");
+    fs::create_dir(folder.path().join("basic_network_1.nn")).unwrap();
+    generator_in(&folder)
+        .run(&[&fixture("basic_network.conf"), "2"])
+        .assert_error("cannot write basic_network_1.nn: ");
+    assert_eq!(folder.files(), ["basic_network_1.nn"]);
+}
+
+#[test]
 fn writes_nothing_when_a_later_configuration_is_invalid() {
     let folder = Folder::new("partial");
     let unknown = fixture("unknown_activation.conf");
