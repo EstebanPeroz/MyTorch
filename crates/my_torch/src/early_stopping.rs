@@ -20,7 +20,7 @@ impl EarlyStopping {
     pub fn new(validation: Scalar, patience: usize) -> Result<EarlyStopping, String> {
         if !(validation > 0.0 && validation < 1.0) {
             return Err(format!(
-                "the validation share must be between 0 and 1, got {validation}"
+                "the validation share must be greater than 0 and less than 1, got {validation}"
             ));
         }
         if patience == 0 {
@@ -120,7 +120,7 @@ mod tests {
             assert_eq!(
                 EarlyStopping::new(validation, 3),
                 Err(format!(
-                    "the validation share must be between 0 and 1, got {validation}"
+                    "the validation share must be greater than 0 and less than 1, got {validation}"
                 ))
             );
         }

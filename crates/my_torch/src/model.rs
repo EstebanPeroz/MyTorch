@@ -444,7 +444,7 @@ mod tests {
                     r#""seed":7"#,
                     r#""seed":7,"early_stopping":{"validation":1.5,"patience":5}"#,
                 ),
-                "the validation share must be between 0 and 1, got 1.5",
+                "the validation share must be greater than 0 and less than 1, got 1.5",
             ),
             (
                 changed(
