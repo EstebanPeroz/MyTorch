@@ -8,8 +8,8 @@ What exists today: the `Matrix` type, the random number generator (`Rng`), the s
 (`Initialization`), the activation functions
 (`Activation`), the dense layer (`Dense`), the losses (`Loss`), the network (`Network`) and its plan
 (`Architecture`), the dataset
-(`Dataset`), the optimizer (`Optimizer`) and the training loop (`Trainer`). Saving and loading networks come
-next.
+(`Dataset`), the optimizer (`Optimizer`), the training loop (`Trainer`) and the model (`Model`): a network with
+its training settings. Saving and loading models come next.
 
 ## Numbers are `f32`
 
@@ -379,6 +379,29 @@ last layer is not `Identity`.
 The loss and the optimizer are stored as `Box<dyn Loss>` and `Box<dyn Optimizer>`: the trainer works with any
 of them, and `fit` takes `&mut self` because an optimizer may update its own state at each step.
 
+## Model
+
+A `Model` is a network together with everything needed to train it: a `Trainer` (loss, optimizer, batch size,
+epochs) and the seed used to shuffle the samples. It is what a network file holds, so that training a network
+again needs nothing but its file. Keras keeps the loss and the optimizer with the network the same way.
+
+| Method | Result |
+|---|---|
+| `Model::new(network, trainer, seed)` | a model; refuses a loss that needs raw scores on a last layer that is not `Identity` |
+| `network()`, `trainer()`, `seed()` | reading the model; `trainer().loss()` and `trainer().optimizer()` give the loss and the optimizer |
+| `train(&dataset)` | `trainer.fit` on the model's network, shuffled with `Rng::new(seed)`; returns the loss of each epoch |
+
+```rust
+let network = architecture.build(&mut Rng::new(1));
+let trainer = Trainer::new(SoftmaxCrossEntropy, Sgd::new(0.01)?, 64, 10)?;
+let mut model = Model::new(network, trainer, 42)?;
+let losses = model.train(&dataset)?;
+let outputs = model.network().predict(&inputs)?;
+```
+
+Every call to `train` shuffles with the same seed, so training the same model on the same data twice gives the
+same network.
+
 ## Names
 
 Files describe activations, initializations, losses and optimizers by name. Each one gives its own name, and
@@ -433,14 +456,14 @@ also learns XOR as two classes: an `Identity` output layer of 2 neurons, one-hot
 
 `from_vec` and `from_rows` refuse a matrix with no rows or no columns, rows of different lengths, and a number
 of values that does not match the shape. `Dense::new` refuses biases that are not one row of one value per
-neuron. `Dataset::new` refuses inputs and targets with different numbers of rows, and `Sgd::new` a learning
-rate that is not a positive number. `Trainer::new` refuses a batch size or an epoch count of 0, and
-`Trainer::fit` a loss that needs raw scores on a last layer that is not `Identity`. `Network::new` refuses an
-empty list and layers whose sizes do not chain, and `predict` and `gradients` refuse inputs and targets of the
-wrong size. `Architecture::new` refuses 0 inputs and an empty list of layers, and `LayerSpec::new` a layer of 0
-neurons. The name lookups refuse unknown names, and `optimizer_from_settings` a missing or unknown
-setting. They return `Err(String)` without the `error:` prefix, like `Label`: the program that calls the
-library adds context and the prefix.
+neuron. `Dataset::new` refuses inputs and targets with different numbers of rows, and `Sgd::new` a learning rate
+that is not a positive number. `Trainer::new` refuses a batch size or an epoch count of 0, and `Trainer::fit` a
+loss that needs raw scores on a last layer that is not `Identity`. `Network::new` refuses an empty list and
+layers whose sizes do not chain, and `predict` and `gradients` refuse inputs and targets of the wrong size.
+`Architecture::new` refuses 0 inputs and an empty list of layers, and `LayerSpec::new` a layer of 0 neurons.
+`Model::new` refuses a loss that needs raw scores on a last layer that is not `Identity`. The name lookups
+refuse unknown names, and `optimizer_from_settings` a missing or unknown setting. They return `Err(String)`
+without the `error:` prefix, like `Label`: the program that calls the library adds context and the prefix.
 
 The operations **panic** on mismatched shapes (for example `matmul` of a `2 × 3` by a `2 × 3`) and on indices
 outside the matrix. `Dense` panics on an input with the wrong number of columns and on a gradient of the wrong

@@ -36,6 +36,14 @@ impl Trainer {
         })
     }
 
+    pub fn loss(&self) -> &dyn Loss {
+        self.loss.as_ref()
+    }
+
+    pub fn optimizer(&self) -> &dyn Optimizer {
+        self.optimizer.as_ref()
+    }
+
     pub fn batch_size(&self) -> usize {
         self.batch_size
     }
@@ -68,7 +76,7 @@ impl Trainer {
         Ok(history)
     }
 
-    fn check_output_layer(&self, network: &Network) -> Result<(), String> {
+    pub(crate) fn check_output_layer(&self, network: &Network) -> Result<(), String> {
         let activation = network.output_layer().activation();
         if self.loss.needs_raw_scores() && activation != Activation::Identity {
             return Err(format!(
@@ -144,6 +152,8 @@ mod tests {
         );
         let trainer = Trainer::new(MeanSquaredError, sgd, 8, 10).unwrap();
         assert_eq!((trainer.batch_size(), trainer.epochs()), (8, 10));
+        assert_eq!(trainer.loss().name(), "mean_squared_error");
+        assert_eq!(trainer.optimizer().settings(), sgd.settings());
     }
 
     #[test]
