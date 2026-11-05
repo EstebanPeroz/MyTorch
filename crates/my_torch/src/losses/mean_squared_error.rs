@@ -5,6 +5,10 @@ use crate::matrix::{Matrix, Scalar};
 pub struct MeanSquaredError;
 
 impl Loss for MeanSquaredError {
+    fn name(&self) -> &'static str {
+        "mean_squared_error"
+    }
+
     fn value(&self, outputs: &Matrix, targets: &Matrix) -> Scalar {
         check_shapes(outputs, targets);
         let squares = outputs.zip_map(targets, |o, t| (o - t) * (o - t));

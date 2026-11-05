@@ -2,11 +2,33 @@ use std::fmt::Debug;
 
 use rand_distr::{Distribution, Normal};
 
+use super::he_normal::HeNormal;
+use super::xavier_normal::XavierNormal;
 use crate::matrix::{Matrix, Scalar};
+use crate::names::find_by_name;
 use crate::rng::Rng;
 
 pub trait Initialization: Debug {
+    fn name(&self) -> &'static str;
+
     fn weights(&self, inputs: usize, outputs: usize, rng: &mut Rng) -> Matrix;
+}
+
+impl<I: Initialization + ?Sized> Initialization for Box<I> {
+    fn name(&self) -> &'static str {
+        self.as_ref().name()
+    }
+
+    fn weights(&self, inputs: usize, outputs: usize, rng: &mut Rng) -> Matrix {
+        self.as_ref().weights(inputs, outputs, rng)
+    }
+}
+
+pub fn initialization_from_name(name: &str) -> Result<Box<dyn Initialization>, String> {
+    let all: Vec<Box<dyn Initialization>> = vec![Box::new(XavierNormal), Box::new(HeNormal)];
+    find_by_name("initialization", name, all, |initialization| {
+        initialization.name()
+    })
 }
 
 pub(super) fn normal_weights(
@@ -45,6 +67,35 @@ mod tests {
 
     fn weights(inputs: usize, outputs: usize, seed: u64) -> Matrix {
         normal_weights(inputs, outputs, |_, _| 0.1, &mut Rng::new(seed))
+    }
+
+    #[test]
+    fn each_initialization_is_found_by_its_name() {
+        for name in ["xavier_normal", "he_normal"] {
+            let initialization = initialization_from_name(name).unwrap();
+            assert_eq!(initialization.name(), name);
+            assert_eq!(
+                initialization.weights(3, 2, &mut Rng::new(1)),
+                initialization.as_ref().weights(3, 2, &mut Rng::new(1))
+            );
+        }
+        assert_eq!(
+            initialization_from_name("he_normal")
+                .unwrap()
+                .weights(50, 20, &mut Rng::new(2)),
+            HeNormal.weights(50, 20, &mut Rng::new(2))
+        );
+    }
+
+    #[test]
+    fn rejects_an_unknown_initialization_name() {
+        assert_eq!(
+            initialization_from_name("uniform").err(),
+            Some(
+                "unknown initialization \"uniform\", expected one of: xavier_normal, he_normal"
+                    .to_string()
+            )
+        );
     }
 
     #[test]

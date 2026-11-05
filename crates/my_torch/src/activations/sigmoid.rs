@@ -4,6 +4,10 @@ use crate::matrix::Scalar;
 pub(super) struct Sigmoid;
 
 impl Function for Sigmoid {
+    fn name(&self) -> &'static str {
+        "sigmoid"
+    }
+
     fn value(&self, x: Scalar) -> Scalar {
         1.0 / (1.0 + (-x).exp())
     }

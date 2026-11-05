@@ -88,10 +88,19 @@ mod tests {
     use crate::matrix::Matrix;
     use crate::network::Gradients;
     use crate::optimizers::Sgd;
+    use std::collections::BTreeMap;
 
     struct Frozen;
 
     impl Optimizer for Frozen {
+        fn name(&self) -> &'static str {
+            "frozen"
+        }
+
+        fn settings(&self) -> BTreeMap<String, Scalar> {
+            BTreeMap::new()
+        }
+
         fn step(&mut self, _: &mut Network, _: &Gradients) {}
     }
 

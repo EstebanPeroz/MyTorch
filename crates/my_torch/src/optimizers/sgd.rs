@@ -1,4 +1,6 @@
-use super::optimizer::Optimizer;
+use std::collections::BTreeMap;
+
+use super::optimizer::{Optimizer, read_settings};
 use crate::matrix::Scalar;
 use crate::network::{Gradients, Network};
 
@@ -8,6 +10,8 @@ pub struct Sgd {
 }
 
 impl Sgd {
+    pub(super) const NAME: &'static str = "sgd";
+
     pub fn new(learning_rate: Scalar) -> Result<Sgd, String> {
         if !learning_rate.is_finite() || learning_rate <= 0.0 {
             return Err(format!(
@@ -20,9 +24,22 @@ impl Sgd {
     pub fn learning_rate(&self) -> Scalar {
         self.learning_rate
     }
+
+    pub(super) fn from_settings(settings: &BTreeMap<String, Scalar>) -> Result<Sgd, String> {
+        let values = read_settings(Sgd::NAME, settings, &["learning_rate"])?;
+        Sgd::new(values[0])
+    }
 }
 
 impl Optimizer for Sgd {
+    fn name(&self) -> &'static str {
+        Sgd::NAME
+    }
+
+    fn settings(&self) -> BTreeMap<String, Scalar> {
+        BTreeMap::from([("learning_rate".to_string(), self.learning_rate)])
+    }
+
     fn step(&mut self, network: &mut Network, gradients: &Gradients) {
         let rate = self.learning_rate;
         network.update(gradients, |parameter, gradient| parameter - rate * gradient);

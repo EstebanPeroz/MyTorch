@@ -85,15 +85,16 @@ the same scale through the layers:
 | `XavierNormal` | `√(2 / (in + out))` | `Sigmoid`, `Tanh` | `nn.init.xavier_normal_` |
 | `HeNormal` | `√(2 / in)` | `Relu`, `LeakyRelu` | `nn.init.kaiming_normal_` |
 
-`Initialization` is a trait with one method: `weights(in, out, &mut rng)` returns an `in × out` matrix of
+`Initialization` is a trait: `name()` gives its name in files (see [Names](#names)), and
+`weights(in, out, &mut rng)` returns an `in × out` matrix of
 starting weights, for example `HeNormal.weights(768, 128, &mut rng)`, where `rng` is an `Rng` (see
 [Random numbers](#random-numbers)): the same seed always gives the same weights.
 It panics on a layer with no inputs or no outputs.
 
 Each initialization is a struct in its own file under `initializations/`. Both current ones draw from a bell
 curve, so they share `normal_weights` from `initializations/initialization.rs` and only give their standard
-deviation. Adding one, such as a uniform version (`xavier_uniform_`), means adding one file: a struct, its
-`impl Initialization` and its tests. The names end in `Normal`, as in Keras, because each also exists in a
+deviation. Adding one, such as a uniform version (`xavier_uniform_`), means adding one file (a struct, its
+`impl Initialization` and its tests) and one line in the list of `initialization_from_name`. The names end in `Normal`, as in Keras, because each also exists in a
 uniform version.
 
 ## Activations
@@ -131,9 +132,9 @@ Each activation's math (its value and its slope for one number) is a struct in i
 name in a network file, which a trait object (`Box<dyn …>`) could not do as easily. Its one `match` only
 routes each variant to its struct.
 
-Adding an activation means adding one file (its struct, its `impl Function` and its tests, which reuse the
-shared measured-slope check from `activations/activation.rs`), one variant in the enum, and one line in the
-`match`. The compiler points to the `match` if that line is missing.
+Adding an activation means adding one file (its struct, its `impl Function` with its name, and its tests, which
+reuse the shared measured-slope check from `activations/activation.rs`), one variant in the enum and in
+`Activation::ALL`, and one line in the `match`. The compiler points to the `match` if that line is missing.
 
 ## Dense layer
 
@@ -206,10 +207,11 @@ that implements it, in its own file under `losses/`: `MeanSquaredError.value(&ou
 methods panic if the targets are not shaped like the outputs; each loss starts with the shared
 `check_shapes`.
 
-Adding a loss means adding one file: a struct (with fields for its settings, such as Huber's `delta`), its
-`impl Loss`, and its tests, which reuse the shared measured-slope check from `losses/loss.rs`. Nothing else
-changes. Losses are a trait while activations are an enum because a network saves its activations in its file
-and must turn their names back into values, while the loss is only a training setting and is never saved.
+Adding a loss means adding one file (a struct with fields for its settings, such as Huber's `delta`, its
+`impl Loss` with its name, and its tests, which reuse the shared measured-slope check from `losses/loss.rs`) and
+one line in the list of `loss_from_name`. Activations stay an enum while losses are a trait because every layer
+stores an activation: an enum is a small value that can be copied and compared, while a loss lives once, in the
+trainer.
 
 ### Softmax cross-entropy
 
@@ -327,9 +329,10 @@ the answer the network should give for it. For XOR, the inputs are the four `[x1
 ## Optimizers
 
 An optimizer decides how to change the weights once backpropagation has computed their gradients. `Optimizer`
-is a trait with one method, `step(&mut network, &gradients)`. It takes `&mut self` because some optimizers
-remember things between steps (Adam keeps a running average of past gradients); each optimizer is a struct in
-its own file under `optimizers/`.
+is a trait: `step(&mut network, &gradients)` applies one update, and `name()` and `settings()` describe the
+optimizer for files (see [Names](#names)). `step` takes `&mut self` because some optimizers remember things
+between steps (Adam keeps a running average of past gradients). Each optimizer is a struct in its own file under
+`optimizers/`, and has one line in the list of `optimizer_from_settings`.
 
 | Optimizer | Step | PyTorch |
 |---|---|---|
@@ -376,6 +379,29 @@ last layer is not `Identity`.
 The loss and the optimizer are stored as `Box<dyn Loss>` and `Box<dyn Optimizer>`: the trainer works with any
 of them, and `fit` takes `&mut self` because an optimizer may update its own state at each step.
 
+## Names
+
+Files describe activations, initializations, losses and optimizers by name. Each one gives its own name, and
+each family has one function that turns a name back into a value:
+
+| Family | Names | From a name |
+|---|---|---|
+| activations | `identity`, `sigmoid`, `tanh`, `relu`, `leaky_relu` | `Activation::from_name("tanh")` |
+| initializations | `xavier_normal`, `he_normal` | `initialization_from_name("he_normal")` |
+| losses | `mean_squared_error`, `softmax_cross_entropy` | `loss_from_name("softmax_cross_entropy")` |
+| optimizers | `sgd`, with the setting `learning_rate` | `optimizer_from_settings("sgd", &settings)` |
+
+An optimizer also has settings: `settings()` returns them as a map from setting name to number
+(`{"learning_rate": 0.01}`), and `optimizer_from_settings` takes them back. It refuses a missing setting and a
+setting the optimizer does not have, so a typo such as `learnig_rate` is reported instead of ignored. Every
+setting of the usual optimizers (learning rate, momentum, Adam's betas) is a number.
+
+An unknown name gives an error that lists the known ones:
+`unknown activation "softmax", expected one of: identity, sigmoid, tanh, relu, leaky_relu`.
+
+The lookups return a `Box<dyn Initialization>`, `Box<dyn Loss>` or `Box<dyn Optimizer>`. A box implements its
+trait too, so it can be passed wherever a value is expected: `Trainer::new(loss_from_name("…")?, …)`.
+
 ## Example: XOR
 
 XOR outputs 1 when exactly one of its two inputs is 1. No straight line separates its two classes, so a single
@@ -412,7 +438,8 @@ rate that is not a positive number. `Trainer::new` refuses a batch size or an ep
 `Trainer::fit` a loss that needs raw scores on a last layer that is not `Identity`. `Network::new` refuses an
 empty list and layers whose sizes do not chain, and `predict` and `gradients` refuse inputs and targets of the
 wrong size. `Architecture::new` refuses 0 inputs and an empty list of layers, and `LayerSpec::new` a layer of 0
-neurons. They return `Err(String)` without the `error:` prefix, like `Label`: the program that calls the
+neurons. The name lookups refuse unknown names, and `optimizer_from_settings` a missing or unknown
+setting. They return `Err(String)` without the `error:` prefix, like `Label`: the program that calls the
 library adds context and the prefix.
 
 The operations **panic** on mismatched shapes (for example `matmul` of a `2 × 3` by a `2 × 3`) and on indices

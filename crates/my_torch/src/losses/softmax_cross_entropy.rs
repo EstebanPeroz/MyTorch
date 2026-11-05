@@ -5,6 +5,10 @@ use crate::matrix::{Matrix, Scalar};
 pub struct SoftmaxCrossEntropy;
 
 impl Loss for SoftmaxCrossEntropy {
+    fn name(&self) -> &'static str {
+        "softmax_cross_entropy"
+    }
+
     fn value(&self, outputs: &Matrix, targets: &Matrix) -> Scalar {
         check_shapes(outputs, targets);
         let terms = SoftmaxCrossEntropy::log_softmax(outputs).zip_map(targets, |l, t| -t * l);

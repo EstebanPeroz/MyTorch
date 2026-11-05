@@ -4,6 +4,10 @@ use crate::matrix::Scalar;
 pub(super) struct Identity;
 
 impl Function for Identity {
+    fn name(&self) -> &'static str {
+        "identity"
+    }
+
     fn value(&self, x: Scalar) -> Scalar {
         x
     }

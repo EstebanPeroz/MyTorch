@@ -6,6 +6,10 @@ use crate::rng::Rng;
 pub struct XavierNormal;
 
 impl Initialization for XavierNormal {
+    fn name(&self) -> &'static str {
+        "xavier_normal"
+    }
+
     fn weights(&self, inputs: usize, outputs: usize, rng: &mut Rng) -> Matrix {
         normal_weights(
             inputs,

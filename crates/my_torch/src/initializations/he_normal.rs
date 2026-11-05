@@ -6,6 +6,10 @@ use crate::rng::Rng;
 pub struct HeNormal;
 
 impl Initialization for HeNormal {
+    fn name(&self) -> &'static str {
+        "he_normal"
+    }
+
     fn weights(&self, inputs: usize, outputs: usize, rng: &mut Rng) -> Matrix {
         normal_weights(inputs, outputs, |inputs, _| (2.0 / inputs).sqrt(), rng)
     }

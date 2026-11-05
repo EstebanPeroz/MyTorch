@@ -40,7 +40,7 @@ keeps the neural network module generic: it could learn any other problem.
   activations, optimizers), each one gets its own file in a plural folder (`losses/`, `initializations/`,
   `activations/`, `optimizers/`), next to a file holding what they share: the trait, and helpers visible only
   inside the folder (`pub(super)`). `mod.rs` only holds `mod` lines and `pub use`. Adding a member means
-  adding a file, without editing a long `match`. See [my_torch.md](my_torch.md).
+  adding a file and one line in the family's list of names, without editing a long `match`. See [my_torch.md](my_torch.md).
 - **Encapsulation:** fields are private and read through getters. Constructors validate their input, so an
   invalid value cannot exist (for example, a `NetworkRequest` with a count of 0).
 - **No duplication:** shared behavior goes into a trait or a shared crate (for example `cli_core::Cli`).
