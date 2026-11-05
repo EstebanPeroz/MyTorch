@@ -545,14 +545,14 @@ neuron. `Dataset::new` refuses inputs and targets with different numbers of rows
 that is not a positive number. `Trainer::new` refuses a batch size or an epoch count of 0, and `Trainer::fit` a
 loss that needs raw scores on a last layer that is not `Identity`, and data too small to set aside a validation
 share. `EarlyStopping::new` refuses a validation share that is not strictly between 0 and 1, and a patience of
-0. `Network::new` refuses an empty list and layers whose sizes do not chain, and `predict` and `gradients`
-refuse inputs and targets of the wrong size. `Architecture::new` refuses 0 inputs and an empty list of layers,
-and `LayerSpec::new` a layer of 0 neurons. `Model::new` refuses a loss that needs raw scores on a last layer
-that is not `Identity`, and `Model::load` a file that cannot be read or is not a valid network file (see
-[Network files](#network-files)); `save` refuses a file that cannot be written and weights that are not finite
-numbers. The name lookups refuse unknown names, and `optimizer_from_settings` a missing or unknown setting. They
-return `Err(String)` without the `error:` prefix, like `Label`: the program that calls the library adds context
-and the prefix.
+0. `Network::new` refuses an empty list and layers whose sizes do not chain, and `predict`, `evaluate` and
+`gradients` refuse inputs and targets of the wrong size. `Architecture::new` refuses 0 inputs and an empty list
+of layers, and `LayerSpec::new` a layer of 0 neurons. `Model::new` refuses a loss that needs raw scores on a
+last layer that is not `Identity`, and `Model::load` a file that cannot be read or is not a valid network file
+(see [Network files](#network-files)); `save` refuses a file that cannot be written and weights that are not
+finite numbers. The name lookups refuse unknown names, and `optimizer_from_settings` a missing or unknown
+setting. They return `Err(String)` without the `error:` prefix, like `Label`: the program that calls the library
+adds context and the prefix.
 
 The operations **panic** on mismatched shapes (for example `matmul` of a `2 × 3` by a `2 × 3`) and on indices
 outside the matrix. `Dense` panics on an input with the wrong number of columns and on a gradient of the wrong
