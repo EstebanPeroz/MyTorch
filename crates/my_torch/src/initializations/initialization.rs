@@ -1,17 +1,17 @@
-use rand::rngs::StdRng;
 use rand_distr::{Distribution, Normal};
 
 use crate::matrix::{Matrix, Scalar};
+use crate::rng::Rng;
 
 pub trait Initialization {
-    fn weights(&self, inputs: usize, outputs: usize, rng: &mut StdRng) -> Matrix;
+    fn weights(&self, inputs: usize, outputs: usize, rng: &mut Rng) -> Matrix;
 }
 
 pub(super) fn normal_weights(
     inputs: usize,
     outputs: usize,
     standard_deviation: impl Fn(Scalar, Scalar) -> Scalar,
-    rng: &mut StdRng,
+    rng: &mut Rng,
 ) -> Matrix {
     assert!(
         inputs > 0 && outputs > 0,
@@ -19,7 +19,9 @@ pub(super) fn normal_weights(
     );
     let normal = Normal::new(0.0, standard_deviation(inputs as Scalar, outputs as Scalar))
         .expect("the standard deviation of a non-empty layer is finite");
-    let values = (0..inputs * outputs).map(|_| normal.sample(rng)).collect();
+    let values = (0..inputs * outputs)
+        .map(|_| normal.sample(rng.generator()))
+        .collect();
     Matrix::from_vec(inputs, outputs, values).expect("the shape is not empty")
 }
 
@@ -38,15 +40,9 @@ pub(super) fn assert_spread(weights: &Matrix, expected_deviation: Scalar) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::SeedableRng;
 
     fn weights(inputs: usize, outputs: usize, seed: u64) -> Matrix {
-        normal_weights(
-            inputs,
-            outputs,
-            |_, _| 0.1,
-            &mut StdRng::seed_from_u64(seed),
-        )
+        normal_weights(inputs, outputs, |_, _| 0.1, &mut Rng::new(seed))
     }
 
     #[test]

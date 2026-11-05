@@ -4,7 +4,8 @@
 random numbers (see [dependencies.md](dependencies.md)). It knows nothing about chess: the analyzer turns
 chessboards into numbers and labels into target vectors, and `my_torch` only sees matrices.
 
-What exists today: the `Matrix` type, the starting weights (`Initialization`), the activation functions
+What exists today: the `Matrix` type, the random number generator (`Rng`), the starting weights
+(`Initialization`), the activation functions
 (`Activation`), the dense layer (`Dense`), the losses (`Loss`), the network (`Network`), the dataset
 (`Dataset`), the optimizer (`Optimizer`) and the training loop (`Trainer`). Saving and loading networks come
 next.
@@ -57,6 +58,16 @@ copying a few rows into a mini-batch is cheap.
 The two transposed products are what backpropagation needs (`Xᵀ · dZ` for the weight gradients, `dZ · Wᵀ` for
 the gradient passed to the previous layer).
 
+## Random numbers
+
+Training draws random numbers twice: for the starting weights, and to shuffle the samples before each epoch.
+Both come from an `Rng`, created from a seed with `Rng::new(42)`, and passed as `&mut rng` to `Dense::random`,
+`Initialization::weights` and `Trainer::fit`. The same seed always gives the same numbers, so the same seed,
+data and settings train exactly the same network.
+
+`Rng` holds a `rand` generator in a private field. `rand` never appears in the library's API, so programs that
+use `my_torch` do not depend on it. Only code inside `my_torch` can draw numbers from an `Rng`.
+
 ## Starting weights
 
 A layer's weights cannot all start at the same value: every neuron of the layer would compute the same thing,
@@ -74,8 +85,8 @@ the same scale through the layers:
 | `HeNormal` | `√(2 / in)` | `Relu`, `LeakyRelu` | `nn.init.kaiming_normal_` |
 
 `Initialization` is a trait with one method: `weights(in, out, &mut rng)` returns an `in × out` matrix of
-starting weights, for example `HeNormal.weights(768, 128, &mut rng)`. The generator is a
-`rand::rngs::StdRng` created with `StdRng::seed_from_u64(seed)`: the same seed always gives the same weights.
+starting weights, for example `HeNormal.weights(768, 128, &mut rng)`, where `rng` is an `Rng` (see
+[Random numbers](#random-numbers)): the same seed always gives the same weights.
 It panics on a layer with no inputs or no outputs.
 
 Each initialization is a struct in its own file under `initializations/`. Both current ones draw from a bell
@@ -236,7 +247,7 @@ next one.
 | `update(&gradients, rule)` | every layer's weights and biases replaced by `rule(parameter, gradient)` |
 
 ```rust
-let mut rng = StdRng::seed_from_u64(42);
+let mut rng = Rng::new(42);
 let network = Network::new(vec![
     Dense::random(2, 4, Activation::Tanh, &XavierNormal, &mut rng),
     Dense::random(4, 1, Activation::Sigmoid, &XavierNormal, &mut rng),
@@ -319,7 +330,7 @@ for each epoch:
   when the batch size does not divide the number of samples.
 - **Shuffling** before each epoch changes which samples go together. Without it, sorted data (all `Nothing`,
   then all `Check`…) would pull the weights one way, then the other.
-- **Reproducibility:** every random choice (starting weights, shuffling) comes from a `StdRng` created with an
+- **Reproducibility:** every random choice (starting weights, shuffling) comes from an `Rng` created with an
   explicit seed. The same seed, data and settings train exactly the same network.
 
 `fit` returns the average loss of each epoch, to follow training or plot learning curves. Each batch's loss is
@@ -339,10 +350,8 @@ layer cannot learn it, but two layers can. `crates/my_torch/tests/xor.rs` trains
 
 ```rust
 use my_torch::*;
-use rand::SeedableRng;
-use rand::rngs::StdRng;
 
-let mut rng = StdRng::seed_from_u64(42);
+let mut rng = Rng::new(42);
 let mut network = Network::new(vec![
     Dense::random(2, 8, Activation::Tanh, &XavierNormal, &mut rng),
     Dense::random(8, 1, Activation::Sigmoid, &XavierNormal, &mut rng),

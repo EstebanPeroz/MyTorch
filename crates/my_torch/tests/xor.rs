@@ -1,9 +1,7 @@
 use my_torch::{
-    Activation, Dataset, Dense, Loss, Matrix, MeanSquaredError, Network, Scalar, Sgd,
+    Activation, Dataset, Dense, Loss, Matrix, MeanSquaredError, Network, Rng, Scalar, Sgd,
     SoftmaxCrossEntropy, Trainer, XavierNormal,
 };
-use rand::SeedableRng;
-use rand::rngs::StdRng;
 
 const SEED: u64 = 42;
 const INPUTS: [[Scalar; 2]; 4] = [[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]];
@@ -15,7 +13,7 @@ fn train(
     loss: impl Loss + 'static,
     learning_rate: Scalar,
 ) -> Network {
-    let mut rng = StdRng::seed_from_u64(SEED);
+    let mut rng = Rng::new(SEED);
     let (outputs, activation) = output;
     let mut network = Network::new(vec![
         Dense::random(2, 8, Activation::Tanh, &XavierNormal, &mut rng),

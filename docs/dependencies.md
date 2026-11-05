@@ -89,8 +89,9 @@ epoch. `rand` provides the generator and the shuffle; `rand_distr` adds the norm
 that starting weights are drawn from.
 
 - Every generator is a `StdRng` created from an explicit seed, so the same seed, data and settings train the
-  same network. `rand` may change `StdRng`'s algorithm in a future version, but the vendored version only
-  changes when we update it.
+  same network. It lives in a private field of `my_torch::Rng` (`Rng::new(seed)`): `rand` never appears in
+  the library's API, and only `rng.rs` creates a generator. `rand` may change `StdRng`'s algorithm in a future
+  version, but the vendored version only changes when we update it.
 - `rand` is used without its default features, only `std` and `std_rng`: the generator is never seeded from the
   operating system, since every seed is explicit.
 

@@ -1,4 +1,3 @@
-use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 
 use crate::activations::Activation;
@@ -7,6 +6,7 @@ use crate::losses::Loss;
 use crate::matrix::Scalar;
 use crate::network::Network;
 use crate::optimizers::Optimizer;
+use crate::rng::Rng;
 
 pub struct Trainer {
     loss: Box<dyn Loss>,
@@ -48,13 +48,13 @@ impl Trainer {
         &mut self,
         network: &mut Network,
         data: &Dataset,
-        rng: &mut StdRng,
+        rng: &mut Rng,
     ) -> Result<Vec<Scalar>, String> {
         self.check_output_layer(network)?;
         let mut order: Vec<usize> = (0..data.sample_count()).collect();
         let mut history = Vec::with_capacity(self.epochs);
         for _ in 0..self.epochs {
-            order.shuffle(rng);
+            order.shuffle(rng.generator());
             let mut total = 0.0;
             for indices in order.chunks(self.batch_size) {
                 let batch = data.select(indices);
@@ -88,7 +88,6 @@ mod tests {
     use crate::matrix::Matrix;
     use crate::network::Gradients;
     use crate::optimizers::Sgd;
-    use rand::SeedableRng;
 
     struct Frozen;
 
@@ -97,7 +96,7 @@ mod tests {
     }
 
     fn network(output: Activation) -> Network {
-        let mut rng = StdRng::seed_from_u64(1);
+        let mut rng = Rng::new(1);
         Network::new(vec![
             Dense::random(2, 3, Activation::Tanh, &XavierNormal, &mut rng),
             Dense::random(3, 2, output, &XavierNormal, &mut rng),
@@ -118,7 +117,7 @@ mod tests {
     fn trained(seed: u64) -> Network {
         let mut network = network(Activation::Sigmoid);
         trainer(MeanSquaredError, 1, 20)
-            .fit(&mut network, &data(), &mut StdRng::seed_from_u64(seed))
+            .fit(&mut network, &data(), &mut Rng::new(seed))
             .unwrap();
         network
     }
@@ -142,11 +141,7 @@ mod tests {
     fn softmax_cross_entropy_needs_an_identity_output_layer() {
         let mut network = network(Activation::Sigmoid);
         assert_eq!(
-            trainer(SoftmaxCrossEntropy, 2, 1).fit(
-                &mut network,
-                &data(),
-                &mut StdRng::seed_from_u64(2)
-            ),
+            trainer(SoftmaxCrossEntropy, 2, 1).fit(&mut network, &data(), &mut Rng::new(2)),
             Err(
                 "this loss needs raw scores, so the output layer must be Identity, not Sigmoid"
                     .to_string()
@@ -158,7 +153,7 @@ mod tests {
     fn returns_one_decreasing_loss_per_epoch() {
         let mut network = network(Activation::Identity);
         let history = trainer(SoftmaxCrossEntropy, 2, 200)
-            .fit(&mut network, &data(), &mut StdRng::seed_from_u64(2))
+            .fit(&mut network, &data(), &mut Rng::new(2))
             .unwrap();
         assert_eq!(history.len(), 200);
         assert!(
@@ -183,7 +178,7 @@ mod tests {
     fn accepts_a_batch_larger_than_the_data() {
         let mut network = network(Activation::Sigmoid);
         let history = trainer(MeanSquaredError, 100, 3)
-            .fit(&mut network, &data(), &mut StdRng::seed_from_u64(4))
+            .fit(&mut network, &data(), &mut Rng::new(4))
             .unwrap();
         assert_eq!(history.len(), 3);
     }
@@ -197,7 +192,7 @@ mod tests {
             .unwrap();
         let history = Trainer::new(MeanSquaredError, Frozen, 3, 1)
             .unwrap()
-            .fit(&mut network, &data, &mut StdRng::seed_from_u64(6))
+            .fit(&mut network, &data, &mut Rng::new(6))
             .unwrap();
         assert!(
             (history[0] - whole).abs() < 1e-6,
@@ -211,7 +206,7 @@ mod tests {
         let mut network = network(Activation::Sigmoid);
         let data = Dataset::new(Matrix::zeros(2, 5), Matrix::zeros(2, 2)).unwrap();
         assert_eq!(
-            trainer(MeanSquaredError, 1, 1).fit(&mut network, &data, &mut StdRng::seed_from_u64(5)),
+            trainer(MeanSquaredError, 1, 1).fit(&mut network, &data, &mut Rng::new(5)),
             Err("the network expects 2 inputs, got 5".to_string())
         );
     }
