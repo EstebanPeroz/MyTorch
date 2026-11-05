@@ -1,4 +1,5 @@
 mod activations;
+mod architecture;
 mod dataset;
 mod dense;
 mod initializations;
@@ -10,6 +11,7 @@ mod rng;
 mod trainer;
 
 pub use activations::Activation;
+pub use architecture::{Architecture, LayerSpec};
 pub use dataset::Dataset;
 pub use dense::{Dense, DenseCache, DenseGradients};
 pub use initializations::{HeNormal, Initialization, XavierNormal};

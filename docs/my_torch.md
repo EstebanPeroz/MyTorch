@@ -6,7 +6,8 @@ chessboards into numbers and labels into target vectors, and `my_torch` only see
 
 What exists today: the `Matrix` type, the random number generator (`Rng`), the starting weights
 (`Initialization`), the activation functions
-(`Activation`), the dense layer (`Dense`), the losses (`Loss`), the network (`Network`), the dataset
+(`Activation`), the dense layer (`Dense`), the losses (`Loss`), the network (`Network`) and its plan
+(`Architecture`), the dataset
 (`Dataset`), the optimizer (`Optimizer`) and the training loop (`Trainer`). Saving and loading networks come
 next.
 
@@ -254,7 +255,8 @@ let network = Network::new(vec![
 ])?;
 ```
 
-Each layer is built with its own initialization, so it can match its activation.
+Each layer is built with its own initialization, so it can match its activation. An
+[`Architecture`](#architecture) builds the same network without repeating the sizes.
 
 `gradients` runs backpropagation:
 
@@ -276,6 +278,37 @@ The network's tests check every gradient that backpropagation computes against a
 weight or bias by `±0.01`, compute the loss twice, and take the slope `(loss(w + 0.01) − loss(w − 0.01)) / 0.02`.
 They do this for every weight and bias of two `3 → 4 → 3 → 2` networks on a batch of 5 samples: a classifier
 (`Tanh`, `Sigmoid`, `Identity`) with softmax cross-entropy, and one with sigmoid outputs and mean squared error.
+
+## Architecture
+
+An `Architecture` is the plan of a network, without its weights: the number of inputs, then for each layer its
+number of neurons, its activation and its initialization. `build` turns the plan into a `Network` with random
+starting weights.
+
+```rust
+let architecture = Architecture::new(2, vec![
+    LayerSpec::new(8, Activation::Tanh, XavierNormal)?,
+    LayerSpec::new(1, Activation::Sigmoid, XavierNormal)?,
+])?;
+let first = architecture.build(&mut Rng::new(1));
+let second = architecture.build(&mut Rng::new(2));
+```
+
+| Method | Result |
+|---|---|
+| `LayerSpec::new(neurons, activation, initialization)` | one layer of the plan; refuses 0 neurons |
+| `Architecture::new(inputs, layers)` | the plan; refuses 0 inputs and an empty list |
+| `inputs()`, `layers()`, and `neurons()`, `activation()`, `initialization()` on each `LayerSpec` | reading the plan |
+| `build(&mut rng)` | a new `Network`: each layer drawn with `Dense::random`, biases at 0 |
+
+Each size is written once: a layer's inputs are the neurons of the layer before it, so the sizes always chain
+and `build` cannot fail. The plan can be built many times: the two networks above have the same shape and
+different weights, and the same seed always builds the same network. This is what the generator needs to
+create several networks from one configuration file.
+
+PyTorch's `nn.Sequential(nn.Linear(2, 8), nn.Tanh(), …)` describes a network and draws its weights at once.
+Like Keras's `Sequential`, an `Architecture` only asks for each layer's number of neurons; it also keeps the
+plan separate from the weights.
 
 ## Dataset
 
@@ -352,10 +385,11 @@ layer cannot learn it, but two layers can. `crates/my_torch/tests/xor.rs` trains
 use my_torch::*;
 
 let mut rng = Rng::new(42);
-let mut network = Network::new(vec![
-    Dense::random(2, 8, Activation::Tanh, &XavierNormal, &mut rng),
-    Dense::random(8, 1, Activation::Sigmoid, &XavierNormal, &mut rng),
+let architecture = Architecture::new(2, vec![
+    LayerSpec::new(8, Activation::Tanh, XavierNormal)?,
+    LayerSpec::new(1, Activation::Sigmoid, XavierNormal)?,
 ])?;
+let mut network = architecture.build(&mut rng);
 let xor = Dataset::new(
     Matrix::from_rows(&[[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]])?,
     Matrix::from_rows(&[[0.0], [1.0], [1.0], [0.0]])?,
@@ -377,7 +411,8 @@ neuron. `Dataset::new` refuses inputs and targets with different numbers of rows
 rate that is not a positive number. `Trainer::new` refuses a batch size or an epoch count of 0, and
 `Trainer::fit` a loss that needs raw scores on a last layer that is not `Identity`. `Network::new` refuses an
 empty list and layers whose sizes do not chain, and `predict` and `gradients` refuse inputs and targets of the
-wrong size. They return `Err(String)` without the `error:` prefix, like `Label`: the program that calls the
+wrong size. `Architecture::new` refuses 0 inputs and an empty list of layers, and `LayerSpec::new` a layer of 0
+neurons. They return `Err(String)` without the `error:` prefix, like `Label`: the program that calls the
 library adds context and the prefix.
 
 The operations **panic** on mismatched shapes (for example `matmul` of a `2 × 3` by a `2 × 3`) and on indices

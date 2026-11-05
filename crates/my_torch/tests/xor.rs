@@ -1,6 +1,6 @@
 use my_torch::{
-    Activation, Dataset, Dense, Loss, Matrix, MeanSquaredError, Network, Rng, Scalar, Sgd,
-    SoftmaxCrossEntropy, Trainer, XavierNormal,
+    Activation, Architecture, Dataset, LayerSpec, Loss, Matrix, MeanSquaredError, Network, Rng,
+    Scalar, Sgd, SoftmaxCrossEntropy, Trainer, XavierNormal,
 };
 
 const SEED: u64 = 42;
@@ -15,11 +15,15 @@ fn train(
 ) -> Network {
     let mut rng = Rng::new(SEED);
     let (outputs, activation) = output;
-    let mut network = Network::new(vec![
-        Dense::random(2, 8, Activation::Tanh, &XavierNormal, &mut rng),
-        Dense::random(8, outputs, activation, &XavierNormal, &mut rng),
-    ])
+    let architecture = Architecture::new(
+        2,
+        vec![
+            LayerSpec::new(8, Activation::Tanh, XavierNormal).unwrap(),
+            LayerSpec::new(outputs, activation, XavierNormal).unwrap(),
+        ],
+    )
     .unwrap();
+    let mut network = architecture.build(&mut rng);
     let xor = Dataset::new(Matrix::from_rows(&INPUTS).unwrap(), targets).unwrap();
     let mut trainer = Trainer::new(loss, Sgd::new(learning_rate).unwrap(), 2, 2000).unwrap();
     let history = trainer.fit(&mut network, &xor, &mut rng).unwrap();

@@ -43,7 +43,7 @@ impl Dense {
         inputs: usize,
         outputs: usize,
         activation: Activation,
-        initialization: &impl Initialization,
+        initialization: &dyn Initialization,
         rng: &mut Rng,
     ) -> Dense {
         Dense {

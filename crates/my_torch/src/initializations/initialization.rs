@@ -1,9 +1,11 @@
+use std::fmt::Debug;
+
 use rand_distr::{Distribution, Normal};
 
 use crate::matrix::{Matrix, Scalar};
 use crate::rng::Rng;
 
-pub trait Initialization {
+pub trait Initialization: Debug {
     fn weights(&self, inputs: usize, outputs: usize, rng: &mut Rng) -> Matrix;
 }
 
