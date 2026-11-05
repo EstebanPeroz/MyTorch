@@ -111,10 +111,10 @@ structs into JSON and back. See [my_torch.md](my_torch.md#network-files) for the
 | Readable in an editor | yes | yes | no |
 | Parser to write and test | none | ours | none |
 | Weights read back exactly | yes | only if we print enough digits | yes |
-| Size for 100,000 weights | about 1 MB | about 1 MB | 400 KB |
+| Size for 100,000 weights | about 1.2 MB | about 1.2 MB | 400 KB |
 | Errors on a broken file | the field and its line and column | ours to write | little detail |
 
-JSON was chosen for being readable and for its precise error messages, at the cost of files about 2.5 times
+JSON was chosen for being readable and for its precise error messages, at the cost of files about 3 times
 larger than binary ones, which still load in milliseconds.
 
 **What to know when using it:**
