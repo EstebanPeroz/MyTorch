@@ -13,6 +13,7 @@ mod network;
 mod optimizers;
 mod rng;
 mod trainer;
+mod training_file;
 
 pub use activations::Activation;
 pub use architecture::{Architecture, LayerSpec};
