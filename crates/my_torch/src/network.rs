@@ -82,6 +82,17 @@ impl Network {
         Ok((value, Gradients { layers }))
     }
 
+    pub fn evaluate(
+        &self,
+        inputs: &Matrix,
+        targets: &Matrix,
+        loss: &dyn Loss,
+    ) -> Result<Scalar, String> {
+        self.check_inputs(inputs)?;
+        self.check_targets(inputs, targets)?;
+        Ok(loss.value(&self.predict(inputs)?, targets))
+    }
+
     pub fn update(&mut self, gradients: &Gradients, rule: impl Fn(Scalar, Scalar) -> Scalar) {
         assert_eq!(
             gradients.layers.len(),
@@ -289,6 +300,36 @@ mod tests {
         assert_eq!(
             gradients(Matrix::zeros(3, 3), Matrix::zeros(2, 2)),
             Err("3 samples but 2 targets".to_string())
+        );
+        let evaluate = |inputs: Matrix, targets: Matrix| {
+            network.evaluate(&inputs, &targets, &MeanSquaredError)
+        };
+        assert_eq!(
+            evaluate(Matrix::zeros(1, 5), Matrix::zeros(1, 2)),
+            Err("the network expects 3 inputs, got 5".to_string())
+        );
+        assert_eq!(
+            evaluate(Matrix::zeros(1, 3), Matrix::zeros(1, 6)),
+            Err("the network has 2 outputs, but the targets have 6 values".to_string())
+        );
+        assert_eq!(
+            evaluate(Matrix::zeros(3, 3), Matrix::zeros(2, 2)),
+            Err("3 samples but 2 targets".to_string())
+        );
+    }
+
+    #[test]
+    fn evaluate_gives_the_loss_without_the_gradients() {
+        let mut rng = Rng::new(21);
+        let inputs = random_matrix(5, 3, &mut rng);
+        let targets = one_hot(5, 2, &mut rng);
+        let network = network(3, &[(4, Activation::Tanh), (2, Activation::Identity)], 22);
+        let (expected, _) = network
+            .gradients(&inputs, &targets, &SoftmaxCrossEntropy)
+            .unwrap();
+        assert_eq!(
+            network.evaluate(&inputs, &targets, &SoftmaxCrossEntropy),
+            Ok(expected)
         );
     }
 
