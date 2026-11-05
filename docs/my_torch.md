@@ -497,7 +497,7 @@ settings. It is read from a JSON file, the configuration file of the generator:
   "inputs": 768,
   "layers": [
     { "neurons": 128, "activation": "relu", "initialization": "he_normal" },
-    { "neurons": 7, "activation": "identity", "initialization": "xavier_normal" }
+    { "neurons": 6, "activation": "identity", "initialization": "xavier_normal" }
   ],
   "training": {
     "loss": "softmax_cross_entropy",

@@ -80,6 +80,7 @@ fn invalid_arguments_exit_with_84() {
 | `program.assert_help(help)` | `--help` and `-h` print exactly `help` on stdout, nothing on stderr, exit code 0 |
 | `program.assert_errors(cases)` | for each `(args, message)`: exit code 84, nothing on stdout, stderr starts with `error: {message}` |
 | `program.run(args)` | runs once and returns an `Outcome`, for checks the helpers above do not cover |
+| `Program::new(path).in_directory(folder)` | runs the program from `folder`, for programs that write files in the current directory |
 | `outcome.assert_success(stdout)` / `outcome.assert_error(message)` | the same checks on a single run |
 
 When a check fails, the message shows the command, the exit code, stdout and stderr.
@@ -87,6 +88,10 @@ When a check fails, the message shows the command, the exit code, stdout and std
 Input files for these tests live in `crates/<program>/tests/fixtures/` (for example a valid CHESSFILE, one
 with an unknown label, an empty one). Cargo runs the tests from the crate's folder, so the tests refer to
 them as `tests/fixtures/…`.
+
+The generator writes its networks in the current directory, so its tests run it with `in_directory` in a
+temporary folder of their own, deleted at the end of the test: they never write into the repository. Since
+they do not run from the crate's folder, they find their fixtures through `CARGO_MANIFEST_DIR`.
 
 The help text lives in `src/help.txt` and is read with `include_str!` by both the program and its test, so it
 exists only once.

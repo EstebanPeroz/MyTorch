@@ -85,3 +85,27 @@ optional, but neither mode is a sensible default. Running without a mode is ther
 
 Each pair becomes a `NetworkRequest`, which checks its own count when it is created: a request with an invalid
 count cannot exist.
+
+### Generating
+
+For each pair, the generator reads the configuration file (see [my_torch.md](my_torch.md#configurations)) and
+writes `nb` networks named after it, in the current directory:
+
+```sh
+./my_torch_generator configs/basic_network.conf 3 deep.conf 1
+# writes basic_network_1.nn, basic_network_2.nn, basic_network_3.nn and deep_network_1.nn
+```
+
+| Rule | Why |
+|---|---|
+| Network `i` of a configuration uses the seed `seed + i − 1` | the networks differ, and running the same command again writes exactly the same files |
+| Every configuration file is read before any network is written | a broken file in the last pair leaves no half-done output |
+| An existing file with the same name is replaced | as when a program writes its output again |
+| Two configuration files with the same name (`a/basic.conf`, `b/basic.conf`) write the same files | the second pair replaces the networks of the first |
+
+Errors name the file, then the problem, and exit with 84:
+
+```
+error: cannot read nope.conf: No such file or directory (os error 2)
+error: basic_network.conf: layer 1: unknown activation "softmax", expected one of: identity, sigmoid, tanh, relu, leaky_relu
+```
