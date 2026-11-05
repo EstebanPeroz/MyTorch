@@ -160,12 +160,7 @@ impl Model {
 
 impl LayerFile {
     fn from_dense(layer: &Dense) -> Result<LayerFile, String> {
-        let parameters = layer.weights().data().iter().chain(layer.biases().data());
-        if parameters.into_iter().any(|value| !value.is_finite()) {
-            return Err(
-                "a weight or bias is not a finite number, so the network cannot be saved".into(),
-            );
-        }
+        check_finite(layer).map_err(|error| format!("{error}, so the network cannot be saved"))?;
         let weights = layer.weights();
         Ok(LayerFile {
             activation: layer.activation().name().to_string(),
@@ -180,8 +175,18 @@ impl LayerFile {
         let activation = Activation::from_name(&self.activation)?;
         let weights = Matrix::from_rows(&self.weights)?;
         let biases = Matrix::from_rows(&[self.biases])?;
-        Dense::new(weights, biases, activation)
+        let layer = Dense::new(weights, biases, activation)?;
+        check_finite(&layer)?;
+        Ok(layer)
     }
+}
+
+fn check_finite(layer: &Dense) -> Result<(), String> {
+    let mut parameters = layer.weights().data().iter().chain(layer.biases().data());
+    if parameters.any(|value| !value.is_finite()) {
+        return Err("a weight or bias is not a finite number".into());
+    }
+    Ok(())
 }
 
 fn invalid_file(error: serde_json::Error) -> String {
@@ -327,6 +332,14 @@ mod tests {
             (
                 changed(r#""weights":[[0.5],[-1.0]]"#, r#""weights":[]"#),
                 "layer 1: a matrix cannot be 0 × 0",
+            ),
+            (
+                changed("[[0.5],[-1.0]]", "[[1e39],[-1.0]]"),
+                "layer 1: a weight or bias is not a finite number",
+            ),
+            (
+                changed(r#""biases":[0.25]"#, r#""biases":[-1e39]"#),
+                "layer 1: a weight or bias is not a finite number",
             ),
             (
                 changed(r#""biases":[0.25]"#, r#""biases":[0.25,1.0]"#),

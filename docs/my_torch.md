@@ -439,7 +439,8 @@ already holds.
   as the same `f32` (`0.1`, not `0.100000001`), so a saved and reloaded network gives the same predictions to
   the bit.
 - **A network whose training diverged cannot be saved.** JSON has no NaN or infinity, so `save` refuses a
-  weight or bias that is not a finite number instead of writing a file that could not be loaded.
+  weight or bias that is not a finite number instead of writing a file that could not be loaded. Loading
+  refuses them too: `serde_json` reads a number too large for an `f32`, such as `1e39`, as infinity.
 - **Loading checks everything** by going through the same constructors as code: `Activation::from_name`,
   `Matrix::from_rows`, `Dense::new`, `Network::new`, the name lookups, `Trainer::new` and `Model::new`. A
   file can therefore not create a network that code could not, and each problem gives the usual message,
