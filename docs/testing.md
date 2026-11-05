@@ -40,6 +40,10 @@ Each rule is tested in detail in one place only:
   neurons, one seed in 20 got stuck in a poor solution; with 8, all 20 seeds learn it, so the test does not
   depend on a lucky seed. A third test saves the trained network to a file, loads it back, and checks that it
   gives the same predictions and can keep training.
+- **Early stopping** is unit-tested in `early_stopping.rs` (the random split, and when to stop on given
+  sequences of losses) and in `trainer.rs`: on random-noise data, which can only be learned by heart, the
+  validation loss rises, training stops `patience` epochs after the best one, and the network that comes back
+  gives exactly the best validation loss.
 - **Network files** are unit-tested in `model.rs`: the exact JSON written for a small network, a save and load
   that keeps every weight to the bit (including `f32::MAX` and the smallest numbers), the refusal to save NaN,
   one broken file per kind of error, each derived from the valid file by changing one field, and a save that
