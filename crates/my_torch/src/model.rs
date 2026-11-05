@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::activations::Activation;
 use crate::dataset::Dataset;
 use crate::dense::Dense;
+use crate::early_stopping::EarlyStopping;
 use crate::history::History;
 use crate::losses::loss_from_name;
 use crate::matrix::{Matrix, Scalar};
@@ -52,6 +53,15 @@ struct TrainingFile {
     batch_size: usize,
     epochs: usize,
     seed: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    early_stopping: Option<EarlyStoppingFile>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EarlyStoppingFile {
+    validation: Scalar,
+    patience: usize,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -130,6 +140,12 @@ impl Model {
                 batch_size: self.trainer.batch_size(),
                 epochs: self.trainer.epochs(),
                 seed: self.seed,
+                early_stopping: self.trainer.early_stopping().map(|early_stopping| {
+                    EarlyStoppingFile {
+                        validation: early_stopping.validation(),
+                        patience: early_stopping.patience(),
+                    }
+                }),
             },
         };
         Ok(serde_json::to_string(&file).expect("a model file only holds names and finite numbers"))
@@ -154,12 +170,18 @@ impl Model {
             })
             .collect::<Result<Vec<_>, _>>()?;
         let training = file.training;
-        let trainer = Trainer::new(
+        let mut trainer = Trainer::new(
             loss_from_name(&training.loss)?,
             optimizer_from_settings(&training.optimizer.name, &training.optimizer.settings)?,
             training.batch_size,
             training.epochs,
         )?;
+        if let Some(early_stopping) = training.early_stopping {
+            trainer = trainer.with_early_stopping(EarlyStopping::new(
+                early_stopping.validation,
+                early_stopping.patience,
+            )?);
+        }
         Model::new(Network::new(layers)?, trainer, training.seed)
     }
 }
@@ -281,6 +303,28 @@ mod tests {
     }
 
     #[test]
+    fn keeps_the_early_stopping_settings() {
+        let early_stopping = EarlyStopping::new(0.1, 5).unwrap();
+        let model = Model::new(
+            network(Activation::Identity),
+            trainer().with_early_stopping(early_stopping),
+            3,
+        )
+        .unwrap();
+        let json = model.to_json().unwrap();
+        assert!(
+            json.ends_with(r#","seed":3,"early_stopping":{"validation":0.1,"patience":5}}}"#),
+            "{json}"
+        );
+        let loaded = Model::from_json(&json).unwrap();
+        assert_eq!(loaded.trainer().early_stopping(), Some(early_stopping));
+        assert_eq!(
+            Model::from_json(SMALL).unwrap().trainer().early_stopping(),
+            None
+        );
+    }
+
+    #[test]
     fn keeps_every_weight_exactly() {
         let weights = [[0.1, 1.0 / 3.0], [Scalar::MAX, -1e-45]];
         let layer = Dense::new(
@@ -394,6 +438,27 @@ mod tests {
             (
                 changed(r#""seed":7"#, r#""seed":-7"#),
                 "invalid network file: invalid value: integer `-7`",
+            ),
+            (
+                changed(
+                    r#""seed":7"#,
+                    r#""seed":7,"early_stopping":{"validation":1.5,"patience":5}"#,
+                ),
+                "the validation share must be between 0 and 1, got 1.5",
+            ),
+            (
+                changed(
+                    r#""seed":7"#,
+                    r#""seed":7,"early_stopping":{"validation":0.1,"patience":0}"#,
+                ),
+                "the patience must be at least 1 epoch",
+            ),
+            (
+                changed(
+                    r#""seed":7"#,
+                    r#""seed":7,"early_stopping":{"validation":0.1}"#,
+                ),
+                "invalid network file: missing field `patience`",
             ),
         ];
         for (text, expected) in cases {

@@ -462,7 +462,7 @@ looks like this:
 |---|---|
 | `version` | the version of this format, 1. A file of another version is refused, so a future change of format cannot be misread. |
 | `layers` | one object per layer, in order: its activation by name (see [Names](#names)), its weights one row per input (`in × out`), and its biases (one per neuron) |
-| `training` | the loss by name, the optimizer by name with its settings, the batch size, the number of epochs and the seed of the shuffle |
+| `training` | the loss by name, the optimizer by name with its settings, the batch size, the number of epochs, the seed of the shuffle, and `early_stopping` when it is on: `{ "validation": 0.1, "patience": 5 }` (see [Early stopping](#early-stopping)). Without that field, there is no early stopping. |
 
 Only what cannot be recomputed is stored. The sizes are not written: a layer's inputs and neurons are the shape
 of its weights. The initialization is not written either: it only chose the starting weights, which the file
