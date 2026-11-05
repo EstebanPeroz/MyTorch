@@ -20,7 +20,7 @@ The repository is a Cargo workspace. Every crate lives in `crates/`.
 
 | Crate | Kind | Role | External dependencies |
 |---|---|---|---|
-| `my_torch` | library | The neural network: creating, training, saving and loading networks. Knows nothing about chess. | `ndarray` (matrix arithmetic), `rand`, `rand_distr` (random numbers) |
+| `my_torch` | library | The neural network: creating, training, saving and loading networks. Knows nothing about chess. | `ndarray` (matrix arithmetic), `rand`, `rand_distr` (random numbers), `serde`, `serde_json` (network files) |
 | `cli_core` | library | The `Cli` trait and `run`, shared by both programs: argument parsing, `--help`, error printing, exit code 84. | `clap` |
 | `my_torch_analyzer` | library + binary | The chess analyzer. The library part holds the chess logic (`color`, `label`, `board`, `sample`, `chess_file`); the binary part (`main`, `cli`, `modes`) only wires it together. | `clap`, `chess_fen_parser` |
 | `my_torch_generator` | binary | Generates blank networks from configuration files. | `clap` |
@@ -81,6 +81,6 @@ bug that valid or invalid input can never trigger (for example `Label::index` on
 | Labels | done, see [labels.md](labels.md) |
 | CHESSFILE reader | done, see [chess-file.md](chess-file.md) |
 | Dataset | not in git, see [dataset.md](dataset.md) |
-| Neural network (`my_torch`) | `Matrix`, starting weights, activations, the dense layer, the losses, the network, training and building a network from an `Architecture` done, see [my_torch.md](my_torch.md); saving and loading networks not started |
+| Neural network (`my_torch`) | `Matrix`, starting weights, activations, the dense layer, the losses, the network, training, building a network from an `Architecture`, and saving and loading networks done, see [my_torch.md](my_torch.md) |
 | `--train`, `--predict` | read the CHESSFILE, then return a "not implemented" error (exit 84) |
 | Network generation | not implemented: returns an error and exits with 84 |

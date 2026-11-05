@@ -1,7 +1,7 @@
 # The `my_torch` library
 
-`my_torch` is the neural network, written from scratch. It uses `ndarray` for matrix arithmetic and `rand` for
-random numbers (see [dependencies.md](dependencies.md)). It knows nothing about chess: the analyzer turns
+`my_torch` is the neural network, written from scratch. It uses `ndarray` for matrix arithmetic, `rand` for
+random numbers and `serde_json` for network files (see [dependencies.md](dependencies.md)). It knows nothing about chess: the analyzer turns
 chessboards into numbers and labels into target vectors, and `my_torch` only sees matrices.
 
 What exists today: the `Matrix` type, the random number generator (`Rng`), the starting weights
@@ -9,7 +9,7 @@ What exists today: the `Matrix` type, the random number generator (`Rng`), the s
 (`Activation`), the dense layer (`Dense`), the losses (`Loss`), the network (`Network`) and its plan
 (`Architecture`), the dataset
 (`Dataset`), the optimizer (`Optimizer`), the training loop (`Trainer`) and the model (`Model`): a network with
-its training settings. Saving and loading models come next.
+its training settings, saved to and loaded from a file.
 
 ## Numbers are `f32`
 
@@ -390,6 +390,8 @@ again needs nothing but its file. Keras keeps the loss and the optimizer with th
 | `Model::new(network, trainer, seed)` | a model; refuses a loss that needs raw scores on a last layer that is not `Identity` |
 | `network()`, `trainer()`, `seed()` | reading the model; `trainer().loss()` and `trainer().optimizer()` give the loss and the optimizer |
 | `train(&dataset)` | `trainer.fit` on the model's network, shuffled with `Rng::new(seed)`; returns the loss of each epoch |
+| `save(path)`, `Model::load(path)` | writing and reading a network file (see [Network files](#network-files)) |
+| `to_json()`, `Model::from_json(&text)` | the same, as a string |
 
 ```rust
 let network = architecture.build(&mut Rng::new(1));
@@ -401,6 +403,51 @@ let outputs = model.network().predict(&inputs)?;
 
 Every call to `train` shuffles with the same seed, so training the same model on the same data twice gives the
 same network.
+
+### Network files
+
+`save` writes a model as JSON, on one line followed by a newline. Spread out, a network with one `2 → 1` layer
+looks like this:
+
+```json
+{
+  "version": 1,
+  "layers": [
+    { "activation": "identity", "weights": [[0.5], [-1.0]], "biases": [0.25] }
+  ],
+  "training": {
+    "loss": "mean_squared_error",
+    "optimizer": { "name": "sgd", "learning_rate": 0.1 },
+    "batch_size": 4,
+    "epochs": 10,
+    "seed": 7
+  }
+}
+```
+
+| Field | Content |
+|---|---|
+| `version` | the version of this format, 1. A file of another version is refused, so a future change of format cannot be misread. |
+| `layers` | one object per layer, in order: its activation by name (see [Names](#names)), its weights one row per input (`in × out`), and its biases (one per neuron) |
+| `training` | the loss by name, the optimizer by name with its settings, the batch size, the number of epochs and the seed of the shuffle |
+
+Only what cannot be recomputed is stored. The sizes are not written: a layer's inputs and neurons are the shape
+of its weights. The initialization is not written either: it only chose the starting weights, which the file
+already holds.
+
+- **Every weight comes back exactly.** `serde_json` writes each `f32` with the fewest digits that read back
+  as the same `f32` (`0.1`, not `0.100000001`), so a saved and reloaded network gives the same predictions to
+  the bit.
+- **A network whose training diverged cannot be saved.** JSON has no NaN or infinity, so `save` refuses a
+  weight or bias that is not a finite number instead of writing a file that could not be loaded.
+- **Loading checks everything** by going through the same constructors as code: `Activation::from_name`,
+  `Matrix::from_rows`, `Dense::new`, `Network::new`, the name lookups, `Trainer::new` and `Model::new`. A
+  file can therefore not create a network that code could not, and each problem gives the usual message,
+  prefixed with the layer it is about: `layer 2: a layer with 64 outputs needs 1 × 64 biases, got a 1 × 63
+  matrix`. Fields that are missing, unknown or of the wrong type are reported by `serde_json` with their place
+  in the file: ``invalid network file: missing field `epochs` at line 1 column 912``.
+- **Size:** about 10 to 12 characters per weight, so about 1 MB per 100,000 weights. Reading and writing take a
+  few milliseconds.
 
 ## Names
 
@@ -461,9 +508,11 @@ that is not a positive number. `Trainer::new` refuses a batch size or an epoch c
 loss that needs raw scores on a last layer that is not `Identity`. `Network::new` refuses an empty list and
 layers whose sizes do not chain, and `predict` and `gradients` refuse inputs and targets of the wrong size.
 `Architecture::new` refuses 0 inputs and an empty list of layers, and `LayerSpec::new` a layer of 0 neurons.
-`Model::new` refuses a loss that needs raw scores on a last layer that is not `Identity`. The name lookups
-refuse unknown names, and `optimizer_from_settings` a missing or unknown setting. They return `Err(String)`
-without the `error:` prefix, like `Label`: the program that calls the library adds context and the prefix.
+`Model::new` refuses a loss that needs raw scores on a last layer that is not `Identity`, and `Model::load` a
+file that cannot be read or is not a valid network file (see [Network files](#network-files)); `save` refuses a
+file that cannot be written and weights that are not finite numbers. The name lookups refuse unknown names, and
+`optimizer_from_settings` a missing or unknown setting. They return `Err(String)` without the `error:` prefix,
+like `Label`: the program that calls the library adds context and the prefix.
 
 The operations **panic** on mismatched shapes (for example `matmul` of a `2 × 3` by a `2 × 3`) and on indices
 outside the matrix. `Dense` panics on an input with the wrong number of columns and on a gradient of the wrong
