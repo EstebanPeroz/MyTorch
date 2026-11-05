@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::activations::Activation;
 use crate::dataset::Dataset;
 use crate::dense::Dense;
+use crate::history::History;
 use crate::losses::loss_from_name;
 use crate::matrix::{Matrix, Scalar};
 use crate::network::Network;
@@ -82,7 +83,7 @@ impl Model {
         self.seed
     }
 
-    pub fn train(&mut self, data: &Dataset) -> Result<Vec<Scalar>, String> {
+    pub fn train(&mut self, data: &Dataset) -> Result<History, String> {
         self.trainer
             .fit(&mut self.network, data, &mut Rng::new(self.seed))
     }

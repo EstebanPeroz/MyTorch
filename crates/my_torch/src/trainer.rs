@@ -2,6 +2,7 @@ use rand::seq::SliceRandom;
 
 use crate::activations::Activation;
 use crate::dataset::Dataset;
+use crate::history::History;
 use crate::losses::Loss;
 use crate::matrix::Scalar;
 use crate::network::Network;
@@ -57,10 +58,10 @@ impl Trainer {
         network: &mut Network,
         data: &Dataset,
         rng: &mut Rng,
-    ) -> Result<Vec<Scalar>, String> {
+    ) -> Result<History, String> {
         self.check_output_layer(network)?;
         let mut order: Vec<usize> = (0..data.sample_count()).collect();
-        let mut history = Vec::with_capacity(self.epochs);
+        let mut history = History::default();
         for _ in 0..self.epochs {
             order.shuffle(rng.generator());
             let mut total = 0.0;
@@ -71,7 +72,7 @@ impl Trainer {
                 self.optimizer.step(network, &gradients);
                 total += value * indices.len() as Scalar;
             }
-            history.push(total / data.sample_count() as Scalar);
+            history.record(total / data.sample_count() as Scalar);
         }
         Ok(history)
     }
@@ -174,12 +175,13 @@ mod tests {
         let history = trainer(SoftmaxCrossEntropy, 2, 200)
             .fit(&mut network, &data(), &mut Rng::new(2))
             .unwrap();
-        assert_eq!(history.len(), 200);
+        let losses = history.training();
+        assert_eq!(losses.len(), 200);
         assert!(
-            history[199] < history[0] / 2.0,
+            losses[199] < losses[0] / 2.0,
             "{} then {}",
-            history[0],
-            history[199]
+            losses[0],
+            losses[199]
         );
     }
 
@@ -199,7 +201,7 @@ mod tests {
         let history = trainer(MeanSquaredError, 100, 3)
             .fit(&mut network, &data(), &mut Rng::new(4))
             .unwrap();
-        assert_eq!(history.len(), 3);
+        assert_eq!(history.epochs(), 3);
     }
 
     #[test]
@@ -214,9 +216,9 @@ mod tests {
             .fit(&mut network, &data, &mut Rng::new(6))
             .unwrap();
         assert!(
-            (history[0] - whole).abs() < 1e-6,
+            (history.training()[0] - whole).abs() < 1e-6,
             "{} instead of {whole}",
-            history[0]
+            history.training()[0]
         );
     }
 

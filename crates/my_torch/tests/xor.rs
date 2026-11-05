@@ -46,7 +46,7 @@ fn train(
     let trainer = Trainer::new(loss, Sgd::new(learning_rate).unwrap(), 2, 2000).unwrap();
     let mut model = Model::new(network, trainer, SEED).unwrap();
     let history = model.train(xor).unwrap();
-    let last = history[history.len() - 1];
+    let last = history.training()[history.epochs() - 1];
     assert!(last < 0.05, "final loss {last}");
     model
 }
@@ -97,6 +97,6 @@ fn a_saved_network_predicts_the_same_and_keeps_training_after_loading() {
         model.network().predict(&inputs())
     );
     let history = loaded.train(&xor).unwrap();
-    assert_eq!(history.len(), 2000);
-    assert!(history[history.len() - 1] < 0.05);
+    assert_eq!(history.epochs(), 2000);
+    assert!(history.training()[1999] < 0.05);
 }

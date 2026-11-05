@@ -370,7 +370,8 @@ for each epoch:
 - **Reproducibility:** every random choice (starting weights, shuffling) comes from an `Rng` created with an
   explicit seed. The same seed, data and settings train exactly the same network.
 
-`fit` returns the average loss of each epoch, to follow training or plot learning curves. Each batch's loss is
+`fit` returns a `History`, like Keras: `history.training()` holds the average loss of each epoch, to follow
+training or plot learning curves, and `history.epochs()` the number of epochs run. Each batch's loss is
 measured just before its step, so the value of an epoch averages a network that keeps changing: it is usually
 slightly higher than the loss of the network at the end of the epoch, as in Keras. Each batch counts in
 proportion to its number of samples, so a smaller last batch weighs less than a full one. It returns an error
@@ -390,7 +391,7 @@ again needs nothing but its file. Keras keeps the loss and the optimizer with th
 |---|---|
 | `Model::new(network, trainer, seed)` | a model; refuses a loss that needs raw scores on a last layer that is not `Identity` |
 | `network()`, `trainer()`, `seed()` | reading the model; `trainer().loss()` and `trainer().optimizer()` give the loss and the optimizer |
-| `train(&dataset)` | `trainer.fit` on the model's network, shuffled with `Rng::new(seed)`; returns the loss of each epoch |
+| `train(&dataset)` | `trainer.fit` on the model's network, shuffled with `Rng::new(seed)`; returns its `History` |
 | `save(path)`, `Model::load(path)` | writing and reading a network file (see [Network files](#network-files)) |
 | `to_json()`, `Model::from_json(&text)` | the same, as a string |
 
@@ -398,7 +399,7 @@ again needs nothing but its file. Keras keeps the loss and the optimizer with th
 let network = architecture.build(&mut Rng::new(1));
 let trainer = Trainer::new(SoftmaxCrossEntropy, Sgd::new(0.01)?, 64, 10)?;
 let mut model = Model::new(network, trainer, 42)?;
-let losses = model.train(&dataset)?;
+let history = model.train(&dataset)?;
 let outputs = model.network().predict(&inputs)?;
 ```
 
@@ -497,7 +498,7 @@ let xor = Dataset::new(
     Matrix::from_rows(&[[0.0], [1.0], [1.0], [0.0]])?,
 )?;
 let mut trainer = Trainer::new(MeanSquaredError, Sgd::new(0.5)?, 2, 2000)?;
-let losses = trainer.fit(&mut network, &xor, &mut rng)?;
+let history = trainer.fit(&mut network, &xor, &mut rng)?;
 let outputs = network.predict(xor.inputs())?;
 ```
 
