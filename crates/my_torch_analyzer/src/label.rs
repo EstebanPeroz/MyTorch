@@ -1,11 +1,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Color {
-    White,
-    Black,
-}
+use crate::color::Color;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Label {
@@ -36,15 +32,6 @@ impl Label {
 
     pub fn from_index(index: usize) -> Option<Label> {
         Label::ALL.get(index).copied()
-    }
-}
-
-impl fmt::Display for Color {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Color::White => formatter.write_str("White"),
-            Color::Black => formatter.write_str("Black"),
-        }
     }
 }
 

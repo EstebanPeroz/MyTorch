@@ -3,8 +3,6 @@ use std::path::{Path, PathBuf};
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command};
 use cli_core::Cli;
 
-const HELP: &str = include_str!("help.txt");
-
 pub enum Mode {
     Predict,
     Train { save_file: PathBuf },
@@ -31,7 +29,7 @@ impl Args {
 }
 
 impl Cli for Args {
-    const HELP: &'static str = HELP;
+    const HELP: &'static str = include_str!("help.txt");
 
     fn command() -> Command {
         Command::new("my_torch_analyzer")

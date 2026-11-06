@@ -14,9 +14,17 @@ CI runs the same command on every push and pull request to `main` (`.github/work
 | Unit tests | `#[cfg(test)] mod tests` at the bottom of the file they test | one type or function in isolation: parsed values, conversions, validation |
 | End-to-end tests | `crates/<program>/tests/` | the real binary, as the grader runs it: exit code, stdout and stderr together |
 
-Each case is tested in one place only. For example, invalid arguments are tested end to end (exit code 84 and
-the exact message), while the values a valid command line produces (paths, default save file, network counts)
-are unit-tested, because they are not visible from outside the program.
+Each rule is tested in detail in one place only:
+
+- **Command-line arguments** are tested end to end (exit code 84 and the exact message). The values a valid
+  command line produces (paths, default save file, network counts) are unit-tested, because they are not
+  visible from outside the program.
+- **CHESSFILE rules** (every malformed FEN, whitespace, blank lines, byte order mark, invalid UTF-8…) are
+  unit-tested in `board.rs`, `sample.rs` and `chess_file.rs`. The end-to-end tests only check one case per
+  kind of error, to prove that each mode reads the file with the right rules (labels required with
+  `--train`, optional with `--predict`) and that its errors exit with 84.
+
+Unit tests share their FEN strings through the test-only module `crates/my_torch_analyzer/src/test_fens.rs`.
 
 ## End-to-end tests
 
@@ -48,6 +56,10 @@ fn invalid_arguments_exit_with_84() {
 | `outcome.assert_success(stdout)` / `outcome.assert_error(message)` | the same checks on a single run |
 
 When a check fails, the message shows the command, the exit code, stdout and stderr.
+
+Input files for these tests live in `crates/<program>/tests/fixtures/` (for example a valid CHESSFILE, one
+with an unknown label, an empty one). Cargo runs the tests from the crate's folder, so the tests refer to
+them as `tests/fixtures/…`.
 
 The help text lives in `src/help.txt` and is read with `include_str!` by both the program and its test, so it
 exists only once.
