@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -7,14 +6,12 @@ use serde::{Deserialize, Serialize};
 use crate::activations::Activation;
 use crate::dataset::Dataset;
 use crate::dense::Dense;
-use crate::early_stopping::EarlyStopping;
 use crate::history::History;
-use crate::losses::loss_from_name;
 use crate::matrix::{Matrix, Scalar};
 use crate::network::Network;
-use crate::optimizers::optimizer_from_settings;
 use crate::rng::Rng;
 use crate::trainer::Trainer;
+use crate::training_file::TrainingFile;
 
 const FORMAT_VERSION: u32 = 1;
 
@@ -43,32 +40,6 @@ struct LayerFile {
     activation: String,
     weights: Vec<Vec<Scalar>>,
     biases: Vec<Scalar>,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TrainingFile {
-    loss: String,
-    optimizer: OptimizerFile,
-    batch_size: usize,
-    epochs: usize,
-    seed: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    early_stopping: Option<EarlyStoppingFile>,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct EarlyStoppingFile {
-    validation: Scalar,
-    patience: usize,
-}
-
-#[derive(Serialize, Deserialize)]
-struct OptimizerFile {
-    name: String,
-    #[serde(flatten)]
-    settings: BTreeMap<String, Scalar>,
 }
 
 impl Model {
@@ -131,22 +102,7 @@ impl Model {
         let file = ModelFile {
             version: FORMAT_VERSION,
             layers,
-            training: TrainingFile {
-                loss: self.trainer.loss().name().to_string(),
-                optimizer: OptimizerFile {
-                    name: self.trainer.optimizer().name().to_string(),
-                    settings: self.trainer.optimizer().settings(),
-                },
-                batch_size: self.trainer.batch_size(),
-                epochs: self.trainer.epochs(),
-                seed: self.seed,
-                early_stopping: self.trainer.early_stopping().map(|early_stopping| {
-                    EarlyStoppingFile {
-                        validation: early_stopping.validation(),
-                        patience: early_stopping.patience(),
-                    }
-                }),
-            },
+            training: TrainingFile::new(&self.trainer, self.seed),
         };
         Ok(serde_json::to_string(&file).expect("a model file only holds names and finite numbers"))
     }
@@ -169,20 +125,8 @@ impl Model {
                     .map_err(|error| format!("layer {}: {error}", index + 1))
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let training = file.training;
-        let mut trainer = Trainer::new(
-            loss_from_name(&training.loss)?,
-            optimizer_from_settings(&training.optimizer.name, &training.optimizer.settings)?,
-            training.batch_size,
-            training.epochs,
-        )?;
-        if let Some(early_stopping) = training.early_stopping {
-            trainer = trainer.with_early_stopping(EarlyStopping::new(
-                early_stopping.validation,
-                early_stopping.patience,
-            )?);
-        }
-        Model::new(Network::new(layers)?, trainer, training.seed)
+        let trainer = file.training.trainer()?;
+        Model::new(Network::new(layers)?, trainer, file.training.seed())
     }
 }
 
@@ -233,6 +177,7 @@ mod tests {
     use crate::activations::Activation;
     use crate::architecture::{Architecture, LayerSpec};
     use crate::dense::Dense;
+    use crate::early_stopping::EarlyStopping;
     use crate::initializations::XavierNormal;
     use crate::losses::{MeanSquaredError, SoftmaxCrossEntropy};
     use crate::optimizers::Sgd;

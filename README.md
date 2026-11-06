@@ -89,7 +89,28 @@ generate.
 ```
 
 ```sh
-./my_torch_generator basic_network.conf 3
+./my_torch_generator basic_network.conf 3     # writes basic_network_1.nn, basic_network_2.nn, basic_network_3.nn
+```
+
+A configuration file is JSON: the number of inputs, each layer (neurons, activation, initialization) and the
+training settings. See [docs/my_torch.md](docs/my_torch.md#configurations).
+
+```json
+{
+  "inputs": 768,
+  "layers": [
+    { "neurons": 128, "activation": "relu", "initialization": "he_normal" },
+    { "neurons": 6, "activation": "identity", "initialization": "xavier_normal" }
+  ],
+  "training": {
+    "loss": "softmax_cross_entropy",
+    "optimizer": { "name": "sgd", "learning_rate": 0.01 },
+    "batch_size": 64,
+    "epochs": 100,
+    "seed": 42,
+    "early_stopping": { "validation": 0.1, "patience": 5 }
+  }
+}
 ```
 
 ## Repository layout

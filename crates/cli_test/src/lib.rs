@@ -6,6 +6,7 @@ use cli_core::ERROR_EXIT_CODE;
 
 pub struct Program {
     path: PathBuf,
+    directory: Option<PathBuf>,
 }
 
 pub struct Outcome {
@@ -19,12 +20,22 @@ impl Program {
     pub fn new(path: &str) -> Self {
         Program {
             path: PathBuf::from(path),
+            directory: None,
         }
     }
 
+    pub fn in_directory(mut self, directory: impl Into<PathBuf>) -> Self {
+        self.directory = Some(directory.into());
+        self
+    }
+
     pub fn run(&self, args: &[&str]) -> Outcome {
-        let output = Command::new(&self.path)
-            .args(args)
+        let mut command = Command::new(&self.path);
+        command.args(args);
+        if let Some(directory) = &self.directory {
+            command.current_dir(directory);
+        }
+        let output = command
             .output()
             .unwrap_or_else(|error| panic!("cannot run {}: {error}", self.path.display()));
         Outcome {
