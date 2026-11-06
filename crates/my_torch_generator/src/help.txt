@@ -1,0 +1,7 @@
+USAGE
+        ./my_torch_generator config_file_1 nb_1 [config_file_2 nb_2...]
+
+DESCRIPTION
+        config_file_i    Configuration file containing description of a neural network we want to
+generate.
+        nb_i             Number of neural networks to generate based on the configuration file.
