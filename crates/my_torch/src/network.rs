@@ -137,12 +137,12 @@ mod tests {
     use crate::activations::Activation;
     use crate::initializations::XavierNormal;
     use crate::losses::{MeanSquaredError, SoftmaxCrossEntropy};
-    use rand::rngs::StdRng;
-    use rand::{RngExt, SeedableRng};
+    use crate::rng::Rng;
+    use rand::RngExt;
     use rand_distr::{Distribution, StandardNormal};
 
     fn network(inputs: usize, layers: &[(usize, Activation)], seed: u64) -> Network {
-        let mut rng = StdRng::seed_from_u64(seed);
+        let mut rng = Rng::new(seed);
         let mut size = inputs;
         let layers = layers
             .iter()
@@ -155,17 +155,17 @@ mod tests {
         Network::new(layers).unwrap()
     }
 
-    fn random_matrix(rows: usize, cols: usize, rng: &mut StdRng) -> Matrix {
+    fn random_matrix(rows: usize, cols: usize, rng: &mut Rng) -> Matrix {
         let values = (0..rows * cols)
-            .map(|_| StandardNormal.sample(&mut *rng))
+            .map(|_| StandardNormal.sample(rng.generator()))
             .collect();
         Matrix::from_vec(rows, cols, values).unwrap()
     }
 
-    fn one_hot(rows: usize, cols: usize, rng: &mut StdRng) -> Matrix {
+    fn one_hot(rows: usize, cols: usize, rng: &mut Rng) -> Matrix {
         let mut targets = Matrix::zeros(rows, cols);
         for row in 0..rows {
-            targets.set(row, rng.random_range(0..cols), 1.0);
+            targets.set(row, rng.generator().random_range(0..cols), 1.0);
         }
         targets
     }
@@ -220,7 +220,7 @@ mod tests {
 
     #[test]
     fn new_checks_that_layer_sizes_chain() {
-        let mut rng = StdRng::seed_from_u64(1);
+        let mut rng = Rng::new(1);
         let first = Dense::random(3, 4, Activation::Relu, &XavierNormal, &mut rng);
         let second = Dense::random(5, 2, Activation::Identity, &XavierNormal, &mut rng);
         assert_eq!(
@@ -244,7 +244,7 @@ mod tests {
     #[test]
     fn predict_runs_every_layer_in_order() {
         let network = network(3, &[(4, Activation::Tanh), (2, Activation::Sigmoid)], 2);
-        let inputs = random_matrix(4, 3, &mut StdRng::seed_from_u64(3));
+        let inputs = random_matrix(4, 3, &mut Rng::new(3));
         let [first, second] = network.layers() else {
             panic!("two layers");
         };
@@ -257,7 +257,7 @@ mod tests {
     #[test]
     fn predict_gives_one_output_row_per_input_row() {
         let network = network(3, &[(4, Activation::Tanh), (2, Activation::Identity)], 2);
-        let inputs = random_matrix(4, 3, &mut StdRng::seed_from_u64(3));
+        let inputs = random_matrix(4, 3, &mut Rng::new(3));
         let together = network.predict(&inputs).unwrap();
         assert_eq!((together.rows(), together.cols()), (4, 2));
         for row in 0..4 {
@@ -294,7 +294,7 @@ mod tests {
 
     #[test]
     fn backpropagation_matches_finite_differences() {
-        let mut rng = StdRng::seed_from_u64(11);
+        let mut rng = Rng::new(11);
         let inputs = random_matrix(5, 3, &mut rng);
         let targets = one_hot(5, 2, &mut rng);
         let classifier = network(

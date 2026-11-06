@@ -1,13 +1,15 @@
 # The `my_torch` library
 
-`my_torch` is the neural network, written from scratch. It uses `ndarray` for matrix arithmetic and `rand` for
-random numbers (see [dependencies.md](dependencies.md)). It knows nothing about chess: the analyzer turns
+`my_torch` is the neural network, written from scratch. It uses `ndarray` for matrix arithmetic, `rand` for
+random numbers and `serde_json` for network files (see [dependencies.md](dependencies.md)). It knows nothing about chess: the analyzer turns
 chessboards into numbers and labels into target vectors, and `my_torch` only sees matrices.
 
-What exists today: the `Matrix` type, the starting weights (`Initialization`), the activation functions
-(`Activation`), the dense layer (`Dense`), the losses (`Loss`), the network (`Network`), the dataset
-(`Dataset`), the optimizer (`Optimizer`) and the training loop (`Trainer`). Saving and loading networks come
-next.
+What exists today: the `Matrix` type, the random number generator (`Rng`), the starting weights
+(`Initialization`), the activation functions
+(`Activation`), the dense layer (`Dense`), the losses (`Loss`), the network (`Network`) and its plan
+(`Architecture`), the dataset
+(`Dataset`), the optimizer (`Optimizer`), the training loop (`Trainer`) and the model (`Model`): a network with
+its training settings, saved to and loaded from a file.
 
 ## Numbers are `f32`
 
@@ -57,6 +59,16 @@ copying a few rows into a mini-batch is cheap.
 The two transposed products are what backpropagation needs (`Xᵀ · dZ` for the weight gradients, `dZ · Wᵀ` for
 the gradient passed to the previous layer).
 
+## Random numbers
+
+Training draws random numbers twice: for the starting weights, and to shuffle the samples before each epoch.
+Both come from an `Rng`, created from a seed with `Rng::new(42)`, and passed as `&mut rng` to `Dense::random`,
+`Initialization::weights` and `Trainer::fit`. The same seed always gives the same numbers, so the same seed,
+data and settings train exactly the same network.
+
+`Rng` holds a `rand` generator in a private field. `rand` never appears in the library's API, so programs that
+use `my_torch` do not depend on it. Only code inside `my_torch` can draw numbers from an `Rng`.
+
 ## Starting weights
 
 A layer's weights cannot all start at the same value: every neuron of the layer would compute the same thing,
@@ -73,15 +85,16 @@ the same scale through the layers:
 | `XavierNormal` | `√(2 / (in + out))` | `Sigmoid`, `Tanh` | `nn.init.xavier_normal_` |
 | `HeNormal` | `√(2 / in)` | `Relu`, `LeakyRelu` | `nn.init.kaiming_normal_` |
 
-`Initialization` is a trait with one method: `weights(in, out, &mut rng)` returns an `in × out` matrix of
-starting weights, for example `HeNormal.weights(768, 128, &mut rng)`. The generator is a
-`rand::rngs::StdRng` created with `StdRng::seed_from_u64(seed)`: the same seed always gives the same weights.
+`Initialization` is a trait: `name()` gives its name in files (see [Names](#names)), and
+`weights(in, out, &mut rng)` returns an `in × out` matrix of
+starting weights, for example `HeNormal.weights(768, 128, &mut rng)`, where `rng` is an `Rng` (see
+[Random numbers](#random-numbers)): the same seed always gives the same weights.
 It panics on a layer with no inputs or no outputs.
 
 Each initialization is a struct in its own file under `initializations/`. Both current ones draw from a bell
 curve, so they share `normal_weights` from `initializations/initialization.rs` and only give their standard
-deviation. Adding one, such as a uniform version (`xavier_uniform_`), means adding one file: a struct, its
-`impl Initialization` and its tests. The names end in `Normal`, as in Keras, because each also exists in a
+deviation. Adding one, such as a uniform version (`xavier_uniform_`), means adding one file (a struct, its
+`impl Initialization` and its tests) and one line in the list of `initialization_from_name`. The names end in `Normal`, as in Keras, because each also exists in a
 uniform version.
 
 ## Activations
@@ -119,9 +132,9 @@ Each activation's math (its value and its slope for one number) is a struct in i
 name in a network file, which a trait object (`Box<dyn …>`) could not do as easily. Its one `match` only
 routes each variant to its struct.
 
-Adding an activation means adding one file (its struct, its `impl Function` and its tests, which reuse the
-shared measured-slope check from `activations/activation.rs`), one variant in the enum, and one line in the
-`match`. The compiler points to the `match` if that line is missing.
+Adding an activation means adding one file (its struct, its `impl Function` with its name, and its tests, which
+reuse the shared measured-slope check from `activations/activation.rs`), one variant in the enum and in
+`Activation::ALL`, and one line in the `match`. The compiler points to the `match` if that line is missing.
 
 ## Dense layer
 
@@ -194,10 +207,11 @@ that implements it, in its own file under `losses/`: `MeanSquaredError.value(&ou
 methods panic if the targets are not shaped like the outputs; each loss starts with the shared
 `check_shapes`.
 
-Adding a loss means adding one file: a struct (with fields for its settings, such as Huber's `delta`), its
-`impl Loss`, and its tests, which reuse the shared measured-slope check from `losses/loss.rs`. Nothing else
-changes. Losses are a trait while activations are an enum because a network saves its activations in its file
-and must turn their names back into values, while the loss is only a training setting and is never saved.
+Adding a loss means adding one file (a struct with fields for its settings, such as Huber's `delta`, its
+`impl Loss` with its name, and its tests, which reuse the shared measured-slope check from `losses/loss.rs`) and
+one line in the list of `loss_from_name`. Activations stay an enum while losses are a trait because every layer
+stores an activation: an enum is a small value that can be copied and compared, while a loss lives once, in the
+trainer.
 
 ### Softmax cross-entropy
 
@@ -236,14 +250,15 @@ next one.
 | `update(&gradients, rule)` | every layer's weights and biases replaced by `rule(parameter, gradient)` |
 
 ```rust
-let mut rng = StdRng::seed_from_u64(42);
+let mut rng = Rng::new(42);
 let network = Network::new(vec![
     Dense::random(2, 4, Activation::Tanh, &XavierNormal, &mut rng),
     Dense::random(4, 1, Activation::Sigmoid, &XavierNormal, &mut rng),
 ])?;
 ```
 
-Each layer is built with its own initialization, so it can match its activation.
+Each layer is built with its own initialization, so it can match its activation. An
+[`Architecture`](#architecture) builds the same network without repeating the sizes.
 
 `gradients` runs backpropagation:
 
@@ -266,6 +281,37 @@ weight or bias by `±0.01`, compute the loss twice, and take the slope `(loss(w 
 They do this for every weight and bias of two `3 → 4 → 3 → 2` networks on a batch of 5 samples: a classifier
 (`Tanh`, `Sigmoid`, `Identity`) with softmax cross-entropy, and one with sigmoid outputs and mean squared error.
 
+## Architecture
+
+An `Architecture` is the plan of a network, without its weights: the number of inputs, then for each layer its
+number of neurons, its activation and its initialization. `build` turns the plan into a `Network` with random
+starting weights.
+
+```rust
+let architecture = Architecture::new(2, vec![
+    LayerSpec::new(8, Activation::Tanh, XavierNormal)?,
+    LayerSpec::new(1, Activation::Sigmoid, XavierNormal)?,
+])?;
+let first = architecture.build(&mut Rng::new(1));
+let second = architecture.build(&mut Rng::new(2));
+```
+
+| Method | Result |
+|---|---|
+| `LayerSpec::new(neurons, activation, initialization)` | one layer of the plan; refuses 0 neurons |
+| `Architecture::new(inputs, layers)` | the plan; refuses 0 inputs and an empty list |
+| `inputs()`, `layers()`, and `neurons()`, `activation()`, `initialization()` on each `LayerSpec` | reading the plan |
+| `build(&mut rng)` | a new `Network`: each layer drawn with `Dense::random`, biases at 0 |
+
+Each size is written once: a layer's inputs are the neurons of the layer before it, so the sizes always chain
+and `build` cannot fail. The plan can be built many times: the two networks above have the same shape and
+different weights, and the same seed always builds the same network. This is what the generator needs to
+create several networks from one configuration file.
+
+PyTorch's `nn.Sequential(nn.Linear(2, 8), nn.Tanh(), …)` describes a network and draws its weights at once.
+Like Keras's `Sequential`, an `Architecture` only asks for each layer's number of neurons; it also keeps the
+plan separate from the weights.
+
 ## Dataset
 
 `Dataset` pairs inputs with their targets: row `i` of `inputs()` is sample `i`, and row `i` of `targets()` is
@@ -283,9 +329,10 @@ the answer the network should give for it. For XOR, the inputs are the four `[x1
 ## Optimizers
 
 An optimizer decides how to change the weights once backpropagation has computed their gradients. `Optimizer`
-is a trait with one method, `step(&mut network, &gradients)`. It takes `&mut self` because some optimizers
-remember things between steps (Adam keeps a running average of past gradients); each optimizer is a struct in
-its own file under `optimizers/`.
+is a trait: `step(&mut network, &gradients)` applies one update, and `name()` and `settings()` describe the
+optimizer for files (see [Names](#names)). `step` takes `&mut self` because some optimizers remember things
+between steps (Adam keeps a running average of past gradients). Each optimizer is a struct in its own file under
+`optimizers/`, and has one line in the list of `optimizer_from_settings`.
 
 | Optimizer | Step | PyTorch |
 |---|---|---|
@@ -319,7 +366,7 @@ for each epoch:
   when the batch size does not divide the number of samples.
 - **Shuffling** before each epoch changes which samples go together. Without it, sorted data (all `Nothing`,
   then all `Check`…) would pull the weights one way, then the other.
-- **Reproducibility:** every random choice (starting weights, shuffling) comes from a `StdRng` created with an
+- **Reproducibility:** every random choice (starting weights, shuffling) comes from an `Rng` created with an
   explicit seed. The same seed, data and settings train exactly the same network.
 
 `fit` returns the average loss of each epoch, to follow training or plot learning curves. Each batch's loss is
@@ -332,6 +379,104 @@ last layer is not `Identity`.
 The loss and the optimizer are stored as `Box<dyn Loss>` and `Box<dyn Optimizer>`: the trainer works with any
 of them, and `fit` takes `&mut self` because an optimizer may update its own state at each step.
 
+## Model
+
+A `Model` is a network together with everything needed to train it: a `Trainer` (loss, optimizer, batch size,
+epochs) and the seed used to shuffle the samples. It is what a network file holds, so that training a network
+again needs nothing but its file. Keras keeps the loss and the optimizer with the network the same way.
+
+| Method | Result |
+|---|---|
+| `Model::new(network, trainer, seed)` | a model; refuses a loss that needs raw scores on a last layer that is not `Identity` |
+| `network()`, `trainer()`, `seed()` | reading the model; `trainer().loss()` and `trainer().optimizer()` give the loss and the optimizer |
+| `train(&dataset)` | `trainer.fit` on the model's network, shuffled with `Rng::new(seed)`; returns the loss of each epoch |
+| `save(path)`, `Model::load(path)` | writing and reading a network file (see [Network files](#network-files)) |
+| `to_json()`, `Model::from_json(&text)` | the same, as a string |
+
+```rust
+let network = architecture.build(&mut Rng::new(1));
+let trainer = Trainer::new(SoftmaxCrossEntropy, Sgd::new(0.01)?, 64, 10)?;
+let mut model = Model::new(network, trainer, 42)?;
+let losses = model.train(&dataset)?;
+let outputs = model.network().predict(&inputs)?;
+```
+
+Every call to `train` shuffles with the same seed, so training the same model on the same data twice gives the
+same network.
+
+### Network files
+
+`save` writes a model as JSON, on one line followed by a newline. Spread out, a network with one `2 → 1` layer
+looks like this:
+
+```json
+{
+  "version": 1,
+  "layers": [
+    { "activation": "identity", "weights": [[0.5], [-1.0]], "biases": [0.25] }
+  ],
+  "training": {
+    "loss": "mean_squared_error",
+    "optimizer": { "name": "sgd", "learning_rate": 0.1 },
+    "batch_size": 4,
+    "epochs": 10,
+    "seed": 7
+  }
+}
+```
+
+| Field | Content |
+|---|---|
+| `version` | the version of this format, 1. A file of another version is refused, so a future change of format cannot be misread. |
+| `layers` | one object per layer, in order: its activation by name (see [Names](#names)), its weights one row per input (`in × out`), and its biases (one per neuron) |
+| `training` | the loss by name, the optimizer by name with its settings, the batch size, the number of epochs and the seed of the shuffle |
+
+Only what cannot be recomputed is stored. The sizes are not written: a layer's inputs and neurons are the shape
+of its weights. The initialization is not written either: it only chose the starting weights, which the file
+already holds.
+
+- **Every weight comes back exactly.** `serde_json` writes each `f32` with the fewest digits that read back
+  as the same `f32` (`0.1`, not `0.100000001`), so a saved and reloaded network gives the same predictions to
+  the bit.
+- **A network whose training diverged cannot be saved.** JSON has no NaN or infinity, so `save` refuses a
+  weight or bias that is not a finite number instead of writing a file that could not be loaded. Loading
+  refuses them too: `serde_json` reads a number too large for an `f32`, such as `1e39`, as infinity.
+- **A failed save never loses the previous file.** `save` writes to `path.tmp` first, then renames it over
+  `path`, which replaces the file in one step. If writing fails (full disk, no permission), the temporary file
+  is removed and the previous file is untouched. This matters because training saves into the file it loaded
+  when no other file is given.
+- **Loading checks everything** by going through the same constructors as code: `Activation::from_name`,
+  `Matrix::from_rows`, `Dense::new`, `Network::new`, the name lookups, `Trainer::new` and `Model::new`. A
+  file can therefore not create a network that code could not, and each problem gives the usual message,
+  prefixed with the layer it is about: `layer 2: a layer with 64 outputs needs 1 × 64 biases, got a 1 × 63
+  matrix`. Fields that are missing, unknown or of the wrong type are reported by `serde_json` with their place
+  in the file: ``invalid network file: missing field `epochs` at line 1 column 912``.
+- **Size:** about 12 characters per weight or bias, so about 1.2 MB per 100,000. A `768 → 128 → 64 → 7`
+  network (107,143 weights and biases) makes a 1.3 MB file, written in 6 ms and read in 8 ms (release build).
+
+## Names
+
+Files describe activations, initializations, losses and optimizers by name. Each one gives its own name, and
+each family has one function that turns a name back into a value:
+
+| Family | Names | From a name |
+|---|---|---|
+| activations | `identity`, `sigmoid`, `tanh`, `relu`, `leaky_relu` | `Activation::from_name("tanh")` |
+| initializations | `xavier_normal`, `he_normal` | `initialization_from_name("he_normal")` |
+| losses | `mean_squared_error`, `softmax_cross_entropy` | `loss_from_name("softmax_cross_entropy")` |
+| optimizers | `sgd`, with the setting `learning_rate` | `optimizer_from_settings("sgd", &settings)` |
+
+An optimizer also has settings: `settings()` returns them as a map from setting name to number
+(`{"learning_rate": 0.01}`), and `optimizer_from_settings` takes them back. It refuses a missing setting and a
+setting the optimizer does not have, so a typo such as `learnig_rate` is reported instead of ignored. Every
+setting of the usual optimizers (learning rate, momentum, Adam's betas) is a number.
+
+An unknown name gives an error that lists the known ones:
+`unknown activation "softmax", expected one of: identity, sigmoid, tanh, relu, leaky_relu`.
+
+The lookups return a `Box<dyn Initialization>`, `Box<dyn Loss>` or `Box<dyn Optimizer>`. A box implements its
+trait too, so it can be passed wherever a value is expected: `Trainer::new(loss_from_name("…")?, …)`.
+
 ## Example: XOR
 
 XOR outputs 1 when exactly one of its two inputs is 1. No straight line separates its two classes, so a single
@@ -339,14 +484,13 @@ layer cannot learn it, but two layers can. `crates/my_torch/tests/xor.rs` trains
 
 ```rust
 use my_torch::*;
-use rand::SeedableRng;
-use rand::rngs::StdRng;
 
-let mut rng = StdRng::seed_from_u64(42);
-let mut network = Network::new(vec![
-    Dense::random(2, 8, Activation::Tanh, &XavierNormal, &mut rng),
-    Dense::random(8, 1, Activation::Sigmoid, &XavierNormal, &mut rng),
+let mut rng = Rng::new(42);
+let architecture = Architecture::new(2, vec![
+    LayerSpec::new(8, Activation::Tanh, XavierNormal)?,
+    LayerSpec::new(1, Activation::Sigmoid, XavierNormal)?,
 ])?;
+let mut network = architecture.build(&mut rng);
 let xor = Dataset::new(
     Matrix::from_rows(&[[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]])?,
     Matrix::from_rows(&[[0.0], [1.0], [1.0], [0.0]])?,
@@ -364,12 +508,16 @@ also learns XOR as two classes: an `Identity` output layer of 2 neurons, one-hot
 
 `from_vec` and `from_rows` refuse a matrix with no rows or no columns, rows of different lengths, and a number
 of values that does not match the shape. `Dense::new` refuses biases that are not one row of one value per
-neuron. `Dataset::new` refuses inputs and targets with different numbers of rows, and `Sgd::new` a learning
-rate that is not a positive number. `Trainer::new` refuses a batch size or an epoch count of 0, and
-`Trainer::fit` a loss that needs raw scores on a last layer that is not `Identity`. `Network::new` refuses an
-empty list and layers whose sizes do not chain, and `predict` and `gradients` refuse inputs and targets of the
-wrong size. They return `Err(String)` without the `error:` prefix, like `Label`: the program that calls the
-library adds context and the prefix.
+neuron. `Dataset::new` refuses inputs and targets with different numbers of rows, and `Sgd::new` a learning rate
+that is not a positive number. `Trainer::new` refuses a batch size or an epoch count of 0, and `Trainer::fit` a
+loss that needs raw scores on a last layer that is not `Identity`. `Network::new` refuses an empty list and
+layers whose sizes do not chain, and `predict` and `gradients` refuse inputs and targets of the wrong size.
+`Architecture::new` refuses 0 inputs and an empty list of layers, and `LayerSpec::new` a layer of 0 neurons.
+`Model::new` refuses a loss that needs raw scores on a last layer that is not `Identity`, and `Model::load` a
+file that cannot be read or is not a valid network file (see [Network files](#network-files)); `save` refuses a
+file that cannot be written and weights that are not finite numbers. The name lookups refuse unknown names, and
+`optimizer_from_settings` a missing or unknown setting. They return `Err(String)` without the `error:` prefix,
+like `Label`: the program that calls the library adds context and the prefix.
 
 The operations **panic** on mismatched shapes (for example `matmul` of a `2 × 3` by a `2 × 3`) and on indices
 outside the matrix. `Dense` panics on an input with the wrong number of columns and on a gradient of the wrong

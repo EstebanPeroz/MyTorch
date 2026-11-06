@@ -4,6 +4,10 @@ use crate::matrix::Scalar;
 pub(super) struct Tanh;
 
 impl Function for Tanh {
+    fn name(&self) -> &'static str {
+        "tanh"
+    }
+
     fn value(&self, x: Scalar) -> Scalar {
         x.tanh()
     }

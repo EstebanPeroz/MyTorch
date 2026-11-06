@@ -1,13 +1,16 @@
-use rand::rngs::StdRng;
-
 use super::initialization::{Initialization, normal_weights};
 use crate::matrix::Matrix;
+use crate::rng::Rng;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct XavierNormal;
 
 impl Initialization for XavierNormal {
-    fn weights(&self, inputs: usize, outputs: usize, rng: &mut StdRng) -> Matrix {
+    fn name(&self) -> &'static str {
+        "xavier_normal"
+    }
+
+    fn weights(&self, inputs: usize, outputs: usize, rng: &mut Rng) -> Matrix {
         normal_weights(
             inputs,
             outputs,
@@ -21,11 +24,10 @@ impl Initialization for XavierNormal {
 mod tests {
     use super::*;
     use crate::initializations::initialization::assert_spread;
-    use rand::SeedableRng;
 
     #[test]
     fn spreads_by_the_square_root_of_two_over_inputs_plus_outputs() {
-        let weights = XavierNormal.weights(150, 50, &mut StdRng::seed_from_u64(2));
+        let weights = XavierNormal.weights(150, 50, &mut Rng::new(2));
         assert_eq!((weights.rows(), weights.cols()), (150, 50));
         assert_spread(&weights, 0.1);
     }

@@ -6,6 +6,10 @@ const NEGATIVE_SLOPE: Scalar = 0.01;
 pub(super) struct LeakyRelu;
 
 impl Function for LeakyRelu {
+    fn name(&self) -> &'static str {
+        "leaky_relu"
+    }
+
     fn value(&self, x: Scalar) -> Scalar {
         if x > 0.0 { x } else { NEGATIVE_SLOPE * x }
     }

@@ -4,6 +4,10 @@ use crate::matrix::Scalar;
 pub(super) struct Relu;
 
 impl Function for Relu {
+    fn name(&self) -> &'static str {
+        "relu"
+    }
+
     fn value(&self, x: Scalar) -> Scalar {
         x.max(0.0)
     }

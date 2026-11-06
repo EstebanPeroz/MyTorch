@@ -4,6 +4,7 @@ use super::relu::Relu;
 use super::sigmoid::Sigmoid;
 use super::tanh::Tanh;
 use crate::matrix::{Matrix, Scalar};
+use crate::names::find_by_name;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Activation {
@@ -15,12 +16,32 @@ pub enum Activation {
 }
 
 pub(super) trait Function {
+    fn name(&self) -> &'static str;
+
     fn value(&self, x: Scalar) -> Scalar;
 
     fn slope(&self, x: Scalar) -> Scalar;
 }
 
 impl Activation {
+    pub const ALL: [Activation; 5] = [
+        Activation::Identity,
+        Activation::Sigmoid,
+        Activation::Tanh,
+        Activation::Relu,
+        Activation::LeakyRelu,
+    ];
+
+    pub fn name(self) -> &'static str {
+        self.function().name()
+    }
+
+    pub fn from_name(name: &str) -> Result<Activation, String> {
+        find_by_name("activation", name, Activation::ALL.to_vec(), |activation| {
+            activation.name()
+        })
+    }
+
     pub fn apply(self, z: &Matrix) -> Matrix {
         let function = self.function();
         z.map(|x| function.value(x))
@@ -58,6 +79,24 @@ pub(super) fn assert_slope_matches_finite_differences(function: &impl Function) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn each_activation_is_found_by_its_name() {
+        let names: Vec<&str> = Activation::ALL.iter().map(|a| a.name()).collect();
+        assert_eq!(names, ["identity", "sigmoid", "tanh", "relu", "leaky_relu"]);
+        for activation in Activation::ALL {
+            assert_eq!(Activation::from_name(activation.name()), Ok(activation));
+        }
+    }
+
+    #[test]
+    fn rejects_an_unknown_activation_name() {
+        assert_eq!(
+            Activation::from_name("softmax"),
+            Err("unknown activation \"softmax\", expected one of: identity, sigmoid, tanh, relu, leaky_relu"
+                .to_string())
+        );
+    }
 
     #[test]
     fn each_activation_uses_its_own_function_on_every_value() {

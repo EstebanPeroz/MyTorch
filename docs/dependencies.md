@@ -2,7 +2,8 @@
 
 No neural network library (PyTorch, TensorFlow…) is used. Everything related to the network (layers,
 activations, losses, backpropagation, training) is written from scratch in `my_torch`. It uses `ndarray` for
-the matrix arithmetic and `rand` for random numbers. The programs use two other external crates.
+the matrix arithmetic, `rand` for random numbers and `serde_json` to save networks. The programs use two other
+external crates.
 
 | Crate | Version | Used by | Purpose |
 |---|---|---|---|
@@ -11,6 +12,8 @@ the matrix arithmetic and `rand` for random numbers. The programs use two other 
 | [ndarray](https://docs.rs/ndarray) | 0.17.2 | `my_torch` (`matrix.rs` only) | matrix arithmetic |
 | [rand](https://docs.rs/rand) | 0.10.3 | `my_torch` | seeded random numbers |
 | [rand_distr](https://docs.rs/rand_distr) | 0.6.0 | `my_torch` | the normal distribution |
+| [serde](https://serde.rs) | 1.0.229 | `my_torch` (`model.rs` only) | turning Rust structs into a file format and back |
+| [serde_json](https://docs.rs/serde_json) | 1.0.154 | `my_torch` (`model.rs` only) | the JSON format of network files |
 
 ## clap
 
@@ -89,13 +92,44 @@ epoch. `rand` provides the generator and the shuffle; `rand_distr` adds the norm
 that starting weights are drawn from.
 
 - Every generator is a `StdRng` created from an explicit seed, so the same seed, data and settings train the
-  same network. `rand` may change `StdRng`'s algorithm in a future version, but the vendored version only
-  changes when we update it.
+  same network. It lives in a private field of `my_torch::Rng` (`Rng::new(seed)`): `rand` never appears in
+  the library's API, and only `rng.rs` creates a generator. `rand` may change `StdRng`'s algorithm in a future
+  version, but the vendored version only changes when we update it.
 - `rand` is used without its default features, only `std` and `std_rng`: the generator is never seeded from the
   operating system, since every seed is explicit.
 
 **Cost:** 8 folders and 3 MB in `vendor/` (about 43 MB in total now), with no C code. `getrandom` and `r-efi`
 are among them because `Cargo.lock` lists them, but they are never compiled.
+
+## serde and serde_json
+
+Network files (`.nn`) are JSON, read and written with `serde_json`; `serde` derives the code that turns Rust
+structs into JSON and back. See [my_torch.md](my_torch.md#network-files) for the format.
+
+| | JSON (`serde_json`) | Our own text format | Binary (`bincode`) |
+|---|---|---|---|
+| Readable in an editor | yes | yes | no |
+| Parser to write and test | none | ours | none |
+| Weights read back exactly | yes | only if we print enough digits | yes |
+| Size for 100,000 weights | about 1.2 MB | about 1.2 MB | 400 KB |
+| Errors on a broken file | the field and its line and column | ours to write | little detail |
+
+JSON was chosen for being readable and for its precise error messages, at the cost of files about 3 times
+larger than binary ones, which still load in milliseconds.
+
+**What to know when using it:**
+
+- Only `model.rs` uses `serde`: private structs (`ModelFile`, `LayerFile`…) describe the file, and are converted
+  to and from `Model`. No public type derives `Serialize` or `Deserialize`, so `serde` stays out of the API.
+- `serde_json` writes each `f32` with the shortest text that reads back as the same `f32`, so weights survive a
+  save and load exactly. It writes NaN and infinity as `null`, which is why `save` refuses them.
+- `#[serde(deny_unknown_fields)]` turns a misspelled field into an error. It does not work together with
+  `#[serde(flatten)]`, which the optimizer settings use: an unknown optimizer setting is refused by
+  `optimizer_from_settings` instead.
+- Its error messages fit on one line and give the line and column of the problem.
+
+**Cost:** 6 crates and about 3 MB in `vendor/` (about 46 MB in total now), with no C code. `serde_derive`
+reuses `syn`, `quote` and `proc-macro2`, which were already there.
 
 ## Vendoring
 

@@ -1,8 +1,7 @@
-use rand::rngs::StdRng;
-
 use crate::activations::Activation;
 use crate::initializations::Initialization;
 use crate::matrix::{Matrix, Scalar};
+use crate::rng::Rng;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Dense {
@@ -44,8 +43,8 @@ impl Dense {
         inputs: usize,
         outputs: usize,
         activation: Activation,
-        initialization: &impl Initialization,
-        rng: &mut StdRng,
+        initialization: &dyn Initialization,
+        rng: &mut Rng,
     ) -> Dense {
         Dense {
             weights: initialization.weights(inputs, outputs, rng),
@@ -139,7 +138,6 @@ impl DenseGradients {
 mod tests {
     use super::*;
     use crate::initializations::XavierNormal;
-    use rand::SeedableRng;
 
     fn matrix(rows: &[&[Scalar]]) -> Matrix {
         Matrix::from_rows(rows).unwrap()
@@ -182,13 +180,7 @@ mod tests {
 
     #[test]
     fn random_draws_weights_and_zero_biases() {
-        let dense = Dense::random(
-            3,
-            2,
-            Activation::Tanh,
-            &XavierNormal,
-            &mut StdRng::seed_from_u64(5),
-        );
+        let dense = Dense::random(3, 2, Activation::Tanh, &XavierNormal, &mut Rng::new(5));
         assert_eq!((dense.input_size(), dense.output_size()), (3, 2));
         assert_eq!(dense.biases(), &Matrix::zeros(1, 2));
         assert_eq!(dense.activation(), Activation::Tanh);

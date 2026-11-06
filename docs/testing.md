@@ -38,7 +38,12 @@ Each rule is tested in detail in one place only:
   Each test checks the final loss and every prediction. XOR cannot be learned by a single layer, so passing
   proves that the layers, backpropagation, the optimizer and the training loop work together. With 4 hidden
   neurons, one seed in 20 got stuck in a poor solution; with 8, all 20 seeds learn it, so the test does not
-  depend on a lucky seed.
+  depend on a lucky seed. A third test saves the trained network to a file, loads it back, and checks that it
+  gives the same predictions and can keep training.
+- **Network files** are unit-tested in `model.rs`: the exact JSON written for a small network, a save and load
+  that keeps every weight to the bit (including `f32::MAX` and the smallest numbers), the refusal to save NaN,
+  one broken file per kind of error, each derived from the valid file by changing one field, and a save that
+  fails halfway (a folder blocks its temporary file) without touching the previous file.
 
 Unit tests share their FEN strings through the test-only module `crates/my_torch_analyzer/src/test_fens.rs`.
 
