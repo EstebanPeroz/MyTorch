@@ -36,11 +36,11 @@ keeps the neural network module generic: it could learn any other problem.
   come from the network. Rule-based labeling only belongs in the dataset tooling.
 - **One file per type**, like a `.hpp` + `.cpp` pair: a type, its methods, its trait implementations and its
   unit tests live in the same file. A file is only split into a folder when it gets genuinely big.
-- **Families get a folder.** When several types do the same job in different ways (initializations,
-  activations), each one gets its own file in a plural folder (`initializations/`, `activations/`), next to a
-  file holding what they share: the trait, and helpers visible only inside the folder (`pub(super)`). `mod.rs`
-  only holds `mod` lines and `pub use`. Adding a member means adding a file, without editing a long `match`.
-  See [my_torch.md](my_torch.md).
+- **Families get a folder.** When several types do the same job in different ways (losses, initializations,
+  activations, optimizers), each one gets its own file in a plural folder (`losses/`, `initializations/`,
+  `activations/`, `optimizers/`), next to a file holding what they share: the trait, and helpers visible only
+  inside the folder (`pub(super)`). `mod.rs` only holds `mod` lines and `pub use`. Adding a member means
+  adding a file, without editing a long `match`. See [my_torch.md](my_torch.md).
 - **Encapsulation:** fields are private and read through getters. Constructors validate their input, so an
   invalid value cannot exist (for example, a `NetworkRequest` with a count of 0).
 - **No duplication:** shared behavior goes into a trait or a shared crate (for example `cli_core::Cli`).
@@ -81,6 +81,6 @@ bug that valid or invalid input can never trigger (for example `Label::index` on
 | Labels | done, see [labels.md](labels.md) |
 | CHESSFILE reader | done, see [chess-file.md](chess-file.md) |
 | Dataset | not in git, see [dataset.md](dataset.md) |
-| Neural network (`my_torch`) | `Matrix`, starting weights, activations and the dense layer done, see [my_torch.md](my_torch.md); losses and training not started |
+| Neural network (`my_torch`) | `Matrix`, starting weights, activations, the dense layer, the losses, the network and training done, see [my_torch.md](my_torch.md); saving and loading networks not started |
 | `--train`, `--predict` | read the CHESSFILE, then return a "not implemented" error (exit 84) |
 | Network generation | not implemented: returns an error and exits with 84 |

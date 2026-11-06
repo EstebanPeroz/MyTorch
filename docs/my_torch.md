@@ -5,7 +5,9 @@ random numbers (see [dependencies.md](dependencies.md)). It knows nothing about 
 chessboards into numbers and labels into target vectors, and `my_torch` only sees matrices.
 
 What exists today: the `Matrix` type, the starting weights (`Initialization`), the activation functions
-(`Activation`) and the dense layer (`Dense`). Losses, the network and training come next.
+(`Activation`), the dense layer (`Dense`), the losses (`Loss`), the network (`Network`), the dataset
+(`Dataset`), the optimizer (`Optimizer`) and the training loop (`Trainer`). Saving and loading networks come
+next.
 
 ## Numbers are `f32`
 
@@ -175,14 +177,202 @@ A layer never changes while it computes: the weights only change in `update`, af
 The tests check `backward` against measured slopes: nudge each weight, bias and input by `±0.01`, compute the
 change in the output, and compare with what `backward` returned.
 
+## Losses
+
+A loss turns the network's outputs into one number that says how wrong they are: 0 when they match the
+targets, larger as they drift away. Training lowers it. Its gradient, how the loss changes with each output, is
+the first `dA` of backpropagation: the last layer's `backward` starts from it.
+
+| Loss | Value | Gradient (`dA` for the last layer) | For |
+|---|---|---|---|
+| `MeanSquaredError` | mean of `(output − target)²` over every value | `2 (output − target) / (n × outputs)` | outputs that are numbers to match (XOR) |
+| `SoftmaxCrossEntropy` | mean over samples of `−Σ target × log softmax(output)` | `(softmax(output) × Σ target − target) / n` | picking one class out of several |
+
+`Loss` is a trait: `value(&outputs, &targets)` returns the number, and
+`gradient(&outputs, &targets)` returns the gradient, a matrix shaped like the outputs. Each loss is a struct
+that implements it, in its own file under `losses/`: `MeanSquaredError.value(&outputs, &targets)`. Both
+methods panic if the targets are not shaped like the outputs; each loss starts with the shared
+`check_shapes`.
+
+Adding a loss means adding one file: a struct (with fields for its settings, such as Huber's `delta`), its
+`impl Loss`, and its tests, which reuse the shared measured-slope check from `losses/loss.rs`. Nothing else
+changes. Losses are a trait while activations are an enum because a network saves its activations in its file
+and must turn their names back into values, while the loss is only a training setting and is never saved.
+
+### Softmax cross-entropy
+
+For classes, the target of a sample is one-hot: a `1` in the column of its class, `0` elsewhere (`[0, 1, 0]`
+for the second of three classes).
+
+- **Softmax** turns a row of raw scores into probabilities that add up to 1: `softmax(x)ᵢ = eˣⁱ / Σⱼ eˣʲ`. The
+  largest score gets the largest probability.
+- **Cross-entropy** is then `−log(probability of the right class)`: close to 0 when the network gives the right
+  class a probability near 1, and large when it gives it almost none.
+- **The gradient** of both together is simply `(softmax − target) / n` for one-hot targets: push the right
+  class's probability up, and every other one down.
+
+The loss applies softmax itself, so the network's last layer must be `Identity`: it outputs raw scores. A
+`Sigmoid` or `Relu` last layer would squash or cut the scores before softmax sees them. The largest raw score
+is also the predicted class, so predictions do not need softmax at all. The `Loss` trait has a third method
+for this, `needs_raw_scores()`: `false` by default, `true` for `SoftmaxCrossEntropy`. `Trainer::fit` refuses
+to train when the loss needs raw scores and the last layer is not `Identity`.
+
+Softmax subtracts each row's largest score before `exp`. It gives the same probabilities, but `e¹⁰⁰⁰` would
+overflow `f32` while `e⁰` does not: huge scores (±1000) give finite values.
+
+PyTorch names the same two losses `nn.MSELoss` and `nn.CrossEntropyLoss` (which also applies softmax itself).
+
+## Network
+
+`Network` holds layers in order, like PyTorch's `nn.Sequential`: the output of each layer is the input of the
+next one.
+
+| Method | Result |
+|---|---|
+| `Network::new(layers)` | a network from layers built with `Dense::random` or `Dense::new`; refuses an empty list and layers whose sizes do not chain |
+| `input_size()`, `output_size()`, `layers()`, `output_layer()` | reading the network; `output_layer()` is the last layer |
+| `predict(&x)` | the output of the last layer, one row per sample |
+| `gradients(&x, &targets, &loss)` | the loss on this batch, and the gradients (`Gradients`) of every layer |
+| `update(&gradients, rule)` | every layer's weights and biases replaced by `rule(parameter, gradient)` |
+
+```rust
+let mut rng = StdRng::seed_from_u64(42);
+let network = Network::new(vec![
+    Dense::random(2, 4, Activation::Tanh, &XavierNormal, &mut rng),
+    Dense::random(4, 1, Activation::Sigmoid, &XavierNormal, &mut rng),
+])?;
+```
+
+Each layer is built with its own initialization, so it can match its activation.
+
+`gradients` runs backpropagation:
+
+1. **Forward:** each layer's `forward_cached`, from the first to the last, keeping every `DenseCache`.
+2. **Loss:** its value on the last layer's output, and its gradient, the first `dA`.
+3. **Backward:** each layer's `backward`, from the last to the first. The `dX` a layer returns is the `dA` of
+   the layer before it.
+
+It returns the gradients without changing the network: the optimizer then decides how to apply them with
+`update`.
+
+`predict` and `gradients` return an error when the inputs do not have `input_size()` columns, when the targets
+do not have `output_size()` columns, or when there are not as many targets as samples. These sizes come from
+the user's files (a network file and a CHESSFILE), so a mismatch is a user error, not a bug.
+
+### Gradient check
+
+The network's tests check every gradient that backpropagation computes against a direct measurement: nudge one
+weight or bias by `±0.01`, compute the loss twice, and take the slope `(loss(w + 0.01) − loss(w − 0.01)) / 0.02`.
+They do this for every weight and bias of two `3 → 4 → 3 → 2` networks on a batch of 5 samples: a classifier
+(`Tanh`, `Sigmoid`, `Identity`) with softmax cross-entropy, and one with sigmoid outputs and mean squared error.
+
+## Dataset
+
+`Dataset` pairs inputs with their targets: row `i` of `inputs()` is sample `i`, and row `i` of `targets()` is
+the answer the network should give for it. For XOR, the inputs are the four `[x1, x2]` rows and the targets are
+`[0]`, `[1]`, `[1]`, `[0]`; for chess, the inputs will be encoded boards and the targets one-hot labels.
+
+| Method | Result |
+|---|---|
+| `Dataset::new(inputs, targets)` | a dataset; refuses a different number of input and target rows |
+| `inputs()`, `targets()`, `sample_count()` | reading the dataset |
+| `select(&[2, 0])` | a smaller dataset with those samples, in that order: how mini-batches are built |
+
+`select` picks the same rows from both matrices, so a sample never gets separated from its target.
+
+## Optimizers
+
+An optimizer decides how to change the weights once backpropagation has computed their gradients. `Optimizer`
+is a trait with one method, `step(&mut network, &gradients)`. It takes `&mut self` because some optimizers
+remember things between steps (Adam keeps a running average of past gradients); each optimizer is a struct in
+its own file under `optimizers/`.
+
+| Optimizer | Step | PyTorch |
+|---|---|---|
+| `Sgd` | every weight and bias: `parameter − learning_rate × gradient` | `torch.optim.SGD` |
+
+`Sgd::new(learning_rate)` refuses a learning rate that is not a positive number. The learning rate is the size
+of each step: too small and training crawls, too large and the loss jumps around or blows up instead of going
+down.
+
+## Training
+
+`Trainer` holds the training settings: a loss, an optimizer, a batch size and a number of epochs.
+`Trainer::new(loss, optimizer, batch_size, epochs)` refuses a batch size or an epoch count of 0.
+`trainer.fit(&mut network, &dataset, &mut rng)` trains the network in place and runs mini-batch gradient
+descent:
+
+```
+for each epoch:
+    shuffle the sample order
+    for each group of batch_size samples:
+        gradients: forward, loss, backpropagation
+        one optimizer step on every weight and bias
+    record the average loss of the epoch
+```
+
+- **An epoch** is one pass over every sample. With 723,019 samples and batches of 64, it makes about 11,300
+  updates.
+- **Mini-batches** are a compromise. A step on the whole dataset is precise but leaves one update per epoch. A
+  step per sample is noisy and does not benefit from matrix products. A batch of a few dozen samples gives
+  many fairly reliable steps, and its noise helps leave poor solutions. The last batch of an epoch is smaller
+  when the batch size does not divide the number of samples.
+- **Shuffling** before each epoch changes which samples go together. Without it, sorted data (all `Nothing`,
+  then all `Check`…) would pull the weights one way, then the other.
+- **Reproducibility:** every random choice (starting weights, shuffling) comes from a `StdRng` created with an
+  explicit seed. The same seed, data and settings train exactly the same network.
+
+`fit` returns the average loss of each epoch, to follow training or plot learning curves. Each batch's loss is
+measured just before its step, so the value of an epoch averages a network that keeps changing: it is usually
+slightly higher than the loss of the network at the end of the epoch, as in Keras. Each batch counts in
+proportion to its number of samples, so a smaller last batch weighs less than a full one. It returns an error
+when the data does not fit the network (see [Network](#network)), or when the loss needs raw scores and the
+last layer is not `Identity`.
+
+The loss and the optimizer are stored as `Box<dyn Loss>` and `Box<dyn Optimizer>`: the trainer works with any
+of them, and `fit` takes `&mut self` because an optimizer may update its own state at each step.
+
+## Example: XOR
+
+XOR outputs 1 when exactly one of its two inputs is 1. No straight line separates its two classes, so a single
+layer cannot learn it, but two layers can. `crates/my_torch/tests/xor.rs` trains this network:
+
+```rust
+use my_torch::*;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
+
+let mut rng = StdRng::seed_from_u64(42);
+let mut network = Network::new(vec![
+    Dense::random(2, 8, Activation::Tanh, &XavierNormal, &mut rng),
+    Dense::random(8, 1, Activation::Sigmoid, &XavierNormal, &mut rng),
+])?;
+let xor = Dataset::new(
+    Matrix::from_rows(&[[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]])?,
+    Matrix::from_rows(&[[0.0], [1.0], [1.0], [0.0]])?,
+)?;
+let mut trainer = Trainer::new(MeanSquaredError, Sgd::new(0.5)?, 2, 2000)?;
+let losses = trainer.fit(&mut network, &xor, &mut rng)?;
+let outputs = network.predict(xor.inputs())?;
+```
+
+After 2,000 epochs the last loss is under 0.05 and every output is on the right side of 0.5. The same test
+also learns XOR as two classes: an `Identity` output layer of 2 neurons, one-hot targets and
+`SoftmaxCrossEntropy`, where `outputs.argmax_rows()` gives the predicted class of each row.
+
 ## Errors
 
 `from_vec` and `from_rows` refuse a matrix with no rows or no columns, rows of different lengths, and a number
 of values that does not match the shape. `Dense::new` refuses biases that are not one row of one value per
-neuron. They return `Err(String)` without the `error:` prefix, like `Label`: the program that calls the library
-adds context and the prefix.
+neuron. `Dataset::new` refuses inputs and targets with different numbers of rows, and `Sgd::new` a learning
+rate that is not a positive number. `Trainer::new` refuses a batch size or an epoch count of 0, and
+`Trainer::fit` a loss that needs raw scores on a last layer that is not `Identity`. `Network::new` refuses an
+empty list and layers whose sizes do not chain, and `predict` and `gradients` refuse inputs and targets of the
+wrong size. They return `Err(String)` without the `error:` prefix, like `Label`: the program that calls the
+library adds context and the prefix.
 
 The operations **panic** on mismatched shapes (for example `matmul` of a `2 × 3` by a `2 × 3`) and on indices
 outside the matrix. `Dense` panics on an input with the wrong number of columns and on a gradient of the wrong
-shape in `backward`. The types built on these check their sizes when they are created, so such a panic would be
-a bug in `my_torch`, not a user error.
+shape in `backward`, and `Network::update` on gradients from a network with another number of layers. The types
+built on these check their sizes when they are created, so such a panic would be a bug in `my_torch`, not a
+user error.
