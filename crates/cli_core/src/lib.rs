@@ -4,7 +4,7 @@ use std::process::ExitCode;
 use clap::error::ErrorKind;
 use clap::{ArgMatches, Command};
 
-const ERROR_EXIT_CODE: u8 = 84;
+pub const ERROR_EXIT_CODE: u8 = 84;
 
 pub trait Cli: Sized {
     const HELP: &'static str;
@@ -30,9 +30,10 @@ pub trait Cli: Sized {
 }
 
 pub fn run<A: Cli>(app: impl FnOnce(A) -> Result<(), String>) -> ExitCode {
-    let result = A::try_parse_from(std::env::args_os()).and_then(|args| match args {
-        Some(args) => app(args),
-        None => {
+    let result = A::try_parse_from(std::env::args_os()).and_then(|args| {
+        if let Some(args) = args {
+            app(args)
+        } else {
             print!("{}", A::HELP);
             Ok(())
         }

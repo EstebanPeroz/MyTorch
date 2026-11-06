@@ -2,10 +2,11 @@ BINS := my_torch_analyzer my_torch_generator
 
 all: $(BINS)
 
-$(BINS):
+$(BINS): build
+
+build:
 	cargo build --release --frozen --workspace
-	cp ./target/release/my_torch_analyzer .
-	cp ./target/release/my_torch_generator .
+	cp $(addprefix ./target/release/,$(BINS)) .
 
 clean:
 	cargo clean
@@ -15,4 +16,4 @@ fclean: clean
 
 re: fclean all
 
-.PHONY: all clean fclean re $(BINS)
+.PHONY: all build clean fclean re $(BINS)
