@@ -1,8 +1,7 @@
 # Dataset
 
-The training data is provided with the subject. It is not in git (`/dataset/` is in `.gitignore`): the subject
-does not require pushing datasets, only being able to show them during the defense. To use it, put it in
-`dataset/` at the repository root.
+The training data is not in git (`/dataset/` is in `.gitignore`): it is large and never changes. To use it,
+put it in `dataset/` at the repository root.
 
 ## Layout
 
@@ -76,8 +75,8 @@ These are to settle together with the training design:
   copies of the same position end up on both sides of the split: the network is then evaluated on positions it
   was trained on, which inflates the measured accuracy and hides overfitting.
 - **How to split:** the split should keep the proportion of each label and of each piece-count file, and use a
-  fixed random seed so that a network can be trained again the same way, as the subject requires.
-- **Stalemate:** without examples, the network cannot learn it. Either keep the class for the bonus and add
-  stalemate positions later, or drop it and use 5 outputs instead of 6.
+  fixed random seed so that a network can be trained again the same way.
+- **Stalemate:** without examples, the network cannot learn it. Either keep the class and add stalemate
+  positions later, or drop it and use 5 outputs instead of 6.
 - **Class imbalance** (41% / 35% / 24%) is mild, but benchmarks should report accuracy per label, not only
   overall.

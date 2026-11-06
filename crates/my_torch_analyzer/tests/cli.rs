@@ -9,7 +9,7 @@ fn analyzer() -> Program {
 }
 
 #[test]
-fn help_prints_the_subject_usage() {
+fn help_prints_the_usage() {
     analyzer().assert_help(HELP);
     analyzer()
         .run(&["--help", "--predict"])

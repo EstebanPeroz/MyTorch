@@ -62,7 +62,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn displays_subject_wording() {
+    fn displays_the_state_then_the_color() {
         assert_eq!(Label::Nothing.to_string(), "Nothing");
         assert_eq!(Label::Check(Color::White).to_string(), "Check White");
         assert_eq!(

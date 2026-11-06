@@ -12,7 +12,7 @@ CI runs the same command on every push and pull request to `main` (`.github/work
 | Kind | Where | What it checks |
 |---|---|---|
 | Unit tests | `#[cfg(test)] mod tests` at the bottom of the file they test | one type or function in isolation: parsed values, conversions, validation |
-| End-to-end tests | `crates/<program>/tests/` | the real binary, as the grader runs it: exit code, stdout and stderr together |
+| End-to-end tests | `crates/<program>/tests/` | the real binary, as a user runs it: exit code, stdout and stderr together |
 
 Each rule is tested in detail in one place only:
 
