@@ -5,11 +5,10 @@ random numbers and `serde_json` for network files (see [dependencies.md](depende
 chessboards into numbers and labels into target vectors, and `my_torch` only sees matrices.
 
 What exists today: the `Matrix` type, the random number generator (`Rng`), the starting weights
-(`Initialization`), the activation functions
-(`Activation`), the dense layer (`Dense`), the losses (`Loss`), the network (`Network`) and its plan
-(`Architecture`), the dataset
-(`Dataset`), the optimizer (`Optimizer`), the training loop (`Trainer`) and the model (`Model`): a network with
-its training settings, saved to and loaded from a file.
+(`Initialization`), the activation functions (`Activation`), the dense layer (`Dense`), the losses (`Loss`), the
+network (`Network`) and its plan (`Architecture`), the dataset (`Dataset`), the optimizer (`Optimizer`), the
+training loop (`Trainer`) with early stopping against overfitting, and the model (`Model`): a network with its
+training settings, saved to and loaded from a file.
 
 ## Numbers are `f32`
 
@@ -246,6 +245,7 @@ next one.
 | `Network::new(layers)` | a network from layers built with `Dense::random` or `Dense::new`; refuses an empty list and layers whose sizes do not chain |
 | `input_size()`, `output_size()`, `layers()`, `output_layer()` | reading the network; `output_layer()` is the last layer |
 | `predict(&x)` | the output of the last layer, one row per sample |
+| `evaluate(&x, &targets, &loss)` | the loss on these samples, without computing gradients (Keras's `evaluate`) |
 | `gradients(&x, &targets, &loss)` | the loss on this batch, and the gradients (`Gradients`) of every layer |
 | `update(&gradients, rule)` | every layer's weights and biases replaced by `rule(parameter, gradient)` |
 
@@ -369,7 +369,8 @@ for each epoch:
 - **Reproducibility:** every random choice (starting weights, shuffling) comes from an `Rng` created with an
   explicit seed. The same seed, data and settings train exactly the same network.
 
-`fit` returns the average loss of each epoch, to follow training or plot learning curves. Each batch's loss is
+`fit` returns a `History`, like Keras: `history.training()` holds the average loss of each epoch, to follow
+training or plot learning curves, and `history.epochs()` the number of epochs run. Each batch's loss is
 measured just before its step, so the value of an epoch averages a network that keeps changing: it is usually
 slightly higher than the loss of the network at the end of the epoch, as in Keras. Each batch counts in
 proportion to its number of samples, so a smaller last batch weighs less than a full one. It returns an error
@@ -378,6 +379,38 @@ last layer is not `Identity`.
 
 The loss and the optimizer are stored as `Box<dyn Loss>` and `Box<dyn Optimizer>`: the trainer works with any
 of them, and `fit` takes `&mut self` because an optimizer may update its own state at each step.
+
+### Early stopping
+
+A network that trains for too long learns its training samples by heart instead of the rule behind them
+(*overfitting*): it keeps improving on them while getting worse on samples it has never seen. Its training loss
+cannot show this, since it keeps going down. Early stopping watches samples the network never trains on, and
+stops when they stop improving.
+
+```rust
+let trainer = Trainer::new(SoftmaxCrossEntropy, Sgd::new(0.01)?, 64, 1000)?
+    .with_early_stopping(EarlyStopping::new(0.1, 5)?);
+```
+
+- **Validation:** before the first epoch, `fit` sets aside a random share of the samples (here 10 %), drawn
+  with the same `rng` as the shuffle. The network never trains on them: after each epoch, `fit` measures the
+  loss on them with `Network::evaluate`, and `history.validation()` keeps one value per epoch.
+- **Stopping:** when the validation loss has not improved for `patience` epochs (here 5), training stops. The
+  number of epochs becomes a maximum.
+- **Best network:** `fit` keeps a copy of the network each time the validation loss improves, and puts it back
+  at the end. `history.best_epoch()` is the index of that epoch, and the network that comes back gives exactly
+  its validation loss.
+- A validation loss that is not a number never counts as an improvement.
+
+| Method | Result |
+|---|---|
+| `EarlyStopping::new(validation, patience)` | the settings; refuses a share that is not strictly between 0 and 1, and a patience of 0 |
+| `trainer.with_early_stopping(early_stopping)` | the same trainer, with early stopping; `trainer.early_stopping()` reads it |
+| `history.validation()`, `history.best_epoch()` | the validation loss of each epoch, and the index of the lowest one; empty and `None` without early stopping |
+
+`fit` refuses data too small to split: 4 samples with a share of 0.1 would leave no validation sample. Without
+early stopping, nothing changes: every sample is trained on, for exactly `epochs` epochs. Keras offers the same
+with `validation_split` and the `EarlyStopping(patience=…, restore_best_weights=True)` callback.
 
 ## Model
 
@@ -389,7 +422,7 @@ again needs nothing but its file. Keras keeps the loss and the optimizer with th
 |---|---|
 | `Model::new(network, trainer, seed)` | a model; refuses a loss that needs raw scores on a last layer that is not `Identity` |
 | `network()`, `trainer()`, `seed()` | reading the model; `trainer().loss()` and `trainer().optimizer()` give the loss and the optimizer |
-| `train(&dataset)` | `trainer.fit` on the model's network, shuffled with `Rng::new(seed)`; returns the loss of each epoch |
+| `train(&dataset)` | `trainer.fit` on the model's network, shuffled with `Rng::new(seed)`; returns its `History` |
 | `save(path)`, `Model::load(path)` | writing and reading a network file (see [Network files](#network-files)) |
 | `to_json()`, `Model::from_json(&text)` | the same, as a string |
 
@@ -397,7 +430,7 @@ again needs nothing but its file. Keras keeps the loss and the optimizer with th
 let network = architecture.build(&mut Rng::new(1));
 let trainer = Trainer::new(SoftmaxCrossEntropy, Sgd::new(0.01)?, 64, 10)?;
 let mut model = Model::new(network, trainer, 42)?;
-let losses = model.train(&dataset)?;
+let history = model.train(&dataset)?;
 let outputs = model.network().predict(&inputs)?;
 ```
 
@@ -429,7 +462,7 @@ looks like this:
 |---|---|
 | `version` | the version of this format, 1. A file of another version is refused, so a future change of format cannot be misread. |
 | `layers` | one object per layer, in order: its activation by name (see [Names](#names)), its weights one row per input (`in × out`), and its biases (one per neuron) |
-| `training` | the loss by name, the optimizer by name with its settings, the batch size, the number of epochs and the seed of the shuffle |
+| `training` | the loss by name, the optimizer by name with its settings, the batch size, the number of epochs, the seed of the shuffle, and `early_stopping` when it is on: `{ "validation": 0.1, "patience": 5 }` (see [Early stopping](#early-stopping)). Without that field, there is no early stopping. |
 
 Only what cannot be recomputed is stored. The sizes are not written: a layer's inputs and neurons are the shape
 of its weights. The initialization is not written either: it only chose the starting weights, which the file
@@ -496,7 +529,7 @@ let xor = Dataset::new(
     Matrix::from_rows(&[[0.0], [1.0], [1.0], [0.0]])?,
 )?;
 let mut trainer = Trainer::new(MeanSquaredError, Sgd::new(0.5)?, 2, 2000)?;
-let losses = trainer.fit(&mut network, &xor, &mut rng)?;
+let history = trainer.fit(&mut network, &xor, &mut rng)?;
 let outputs = network.predict(xor.inputs())?;
 ```
 
@@ -510,14 +543,16 @@ also learns XOR as two classes: an `Identity` output layer of 2 neurons, one-hot
 of values that does not match the shape. `Dense::new` refuses biases that are not one row of one value per
 neuron. `Dataset::new` refuses inputs and targets with different numbers of rows, and `Sgd::new` a learning rate
 that is not a positive number. `Trainer::new` refuses a batch size or an epoch count of 0, and `Trainer::fit` a
-loss that needs raw scores on a last layer that is not `Identity`. `Network::new` refuses an empty list and
-layers whose sizes do not chain, and `predict` and `gradients` refuse inputs and targets of the wrong size.
-`Architecture::new` refuses 0 inputs and an empty list of layers, and `LayerSpec::new` a layer of 0 neurons.
-`Model::new` refuses a loss that needs raw scores on a last layer that is not `Identity`, and `Model::load` a
-file that cannot be read or is not a valid network file (see [Network files](#network-files)); `save` refuses a
-file that cannot be written and weights that are not finite numbers. The name lookups refuse unknown names, and
-`optimizer_from_settings` a missing or unknown setting. They return `Err(String)` without the `error:` prefix,
-like `Label`: the program that calls the library adds context and the prefix.
+loss that needs raw scores on a last layer that is not `Identity`, and data too small to set aside a validation
+share. `EarlyStopping::new` refuses a validation share that is not strictly between 0 and 1, and a patience of
+0. `Network::new` refuses an empty list and layers whose sizes do not chain, and `predict`, `evaluate` and
+`gradients` refuse inputs and targets of the wrong size. `Architecture::new` refuses 0 inputs and an empty list
+of layers, and `LayerSpec::new` a layer of 0 neurons. `Model::new` refuses a loss that needs raw scores on a
+last layer that is not `Identity`, and `Model::load` a file that cannot be read or is not a valid network file
+(see [Network files](#network-files)); `save` refuses a file that cannot be written and weights that are not
+finite numbers. The name lookups refuse unknown names, and `optimizer_from_settings` a missing or unknown
+setting. They return `Err(String)` without the `error:` prefix, like `Label`: the program that calls the library
+adds context and the prefix.
 
 The operations **panic** on mismatched shapes (for example `matmul` of a `2 × 3` by a `2 × 3`) and on indices
 outside the matrix. `Dense` panics on an input with the wrong number of columns and on a gradient of the wrong

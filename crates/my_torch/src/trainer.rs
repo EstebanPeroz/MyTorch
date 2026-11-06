@@ -2,6 +2,8 @@ use rand::seq::SliceRandom;
 
 use crate::activations::Activation;
 use crate::dataset::Dataset;
+use crate::early_stopping::{EarlyStopping, Watch};
+use crate::history::History;
 use crate::losses::Loss;
 use crate::matrix::Scalar;
 use crate::network::Network;
@@ -13,6 +15,7 @@ pub struct Trainer {
     optimizer: Box<dyn Optimizer>,
     batch_size: usize,
     epochs: usize,
+    early_stopping: Option<EarlyStopping>,
 }
 
 impl Trainer {
@@ -33,7 +36,13 @@ impl Trainer {
             optimizer: Box::new(optimizer),
             batch_size,
             epochs,
+            early_stopping: None,
         })
+    }
+
+    pub fn with_early_stopping(mut self, early_stopping: EarlyStopping) -> Trainer {
+        self.early_stopping = Some(early_stopping);
+        self
     }
 
     pub fn loss(&self) -> &dyn Loss {
@@ -52,28 +61,64 @@ impl Trainer {
         self.epochs
     }
 
+    pub fn early_stopping(&self) -> Option<EarlyStopping> {
+        self.early_stopping
+    }
+
     pub fn fit(
         &mut self,
         network: &mut Network,
         data: &Dataset,
         rng: &mut Rng,
-    ) -> Result<Vec<Scalar>, String> {
+    ) -> Result<History, String> {
         self.check_output_layer(network)?;
-        let mut order: Vec<usize> = (0..data.sample_count()).collect();
-        let mut history = Vec::with_capacity(self.epochs);
-        for _ in 0..self.epochs {
-            order.shuffle(rng.generator());
-            let mut total = 0.0;
-            for indices in order.chunks(self.batch_size) {
-                let batch = data.select(indices);
-                let (value, gradients) =
-                    network.gradients(batch.inputs(), batch.targets(), self.loss.as_ref())?;
-                self.optimizer.step(network, &gradients);
-                total += value * indices.len() as Scalar;
+        let (mut order, validation) = match self.early_stopping {
+            Some(early_stopping) => {
+                let (training, validation) = early_stopping.split(data.sample_count(), rng)?;
+                (training, Some(data.select(&validation)))
             }
-            history.push(total / data.sample_count() as Scalar);
+            None => ((0..data.sample_count()).collect(), None),
+        };
+        let mut watch = self
+            .early_stopping
+            .map(|early_stopping| Watch::new(early_stopping.patience()));
+        let mut history = History::default();
+        for _ in 0..self.epochs {
+            let training = self.run_epoch(network, data, &mut order, rng)?;
+            let validation = validation
+                .as_ref()
+                .map(|set| network.evaluate(set.inputs(), set.targets(), self.loss.as_ref()))
+                .transpose()?;
+            history.record(training, validation);
+            if let (Some(watch), Some(loss)) = (&mut watch, validation)
+                && watch.should_stop(loss, network)
+            {
+                break;
+            }
+        }
+        if let Some(best) = watch.and_then(Watch::best_network) {
+            *network = best;
         }
         Ok(history)
+    }
+
+    fn run_epoch(
+        &mut self,
+        network: &mut Network,
+        data: &Dataset,
+        order: &mut [usize],
+        rng: &mut Rng,
+    ) -> Result<Scalar, String> {
+        order.shuffle(rng.generator());
+        let mut total = 0.0;
+        for indices in order.chunks(self.batch_size) {
+            let batch = data.select(indices);
+            let (value, gradients) =
+                network.gradients(batch.inputs(), batch.targets(), self.loss.as_ref())?;
+            self.optimizer.step(network, &gradients);
+            total += value * indices.len() as Scalar;
+        }
+        Ok(total / order.len() as Scalar)
     }
 
     pub(crate) fn check_output_layer(&self, network: &Network) -> Result<(), String> {
@@ -96,6 +141,7 @@ mod tests {
     use crate::matrix::Matrix;
     use crate::network::Gradients;
     use crate::optimizers::Sgd;
+    use rand::RngExt;
     use std::collections::BTreeMap;
 
     struct Frozen;
@@ -174,12 +220,13 @@ mod tests {
         let history = trainer(SoftmaxCrossEntropy, 2, 200)
             .fit(&mut network, &data(), &mut Rng::new(2))
             .unwrap();
-        assert_eq!(history.len(), 200);
+        let losses = history.training();
+        assert_eq!(losses.len(), 200);
         assert!(
-            history[199] < history[0] / 2.0,
+            losses[199] < losses[0] / 2.0,
             "{} then {}",
-            history[0],
-            history[199]
+            losses[0],
+            losses[199]
         );
     }
 
@@ -199,7 +246,7 @@ mod tests {
         let history = trainer(MeanSquaredError, 100, 3)
             .fit(&mut network, &data(), &mut Rng::new(4))
             .unwrap();
-        assert_eq!(history.len(), 3);
+        assert_eq!(history.epochs(), 3);
     }
 
     #[test]
@@ -214,9 +261,99 @@ mod tests {
             .fit(&mut network, &data, &mut Rng::new(6))
             .unwrap();
         assert!(
-            (history[0] - whole).abs() < 1e-6,
+            (history.training()[0] - whole).abs() < 1e-6,
             "{} instead of {whole}",
-            history[0]
+            history.training()[0]
+        );
+    }
+
+    fn noise(samples: usize, seed: u64) -> Dataset {
+        let mut rng = Rng::new(seed);
+        let inputs = (0..samples * 3)
+            .map(|_| rng.generator().random::<Scalar>())
+            .collect();
+        let mut targets = Matrix::zeros(samples, 2);
+        for row in 0..samples {
+            targets.set(row, rng.generator().random_range(0..2), 1.0);
+        }
+        Dataset::new(Matrix::from_vec(samples, 3, inputs).unwrap(), targets).unwrap()
+    }
+
+    fn wide_network() -> Network {
+        let mut rng = Rng::new(7);
+        Network::new(vec![
+            Dense::random(3, 32, Activation::Tanh, &XavierNormal, &mut rng),
+            Dense::random(32, 2, Activation::Identity, &XavierNormal, &mut rng),
+        ])
+        .unwrap()
+    }
+
+    #[test]
+    fn without_early_stopping_every_epoch_runs_and_nothing_is_set_aside() {
+        let mut trainer = trainer(SoftmaxCrossEntropy, 4, 30);
+        assert_eq!(trainer.early_stopping(), None);
+        let mut network = wide_network();
+        let history = trainer
+            .fit(&mut network, &noise(40, 8), &mut Rng::new(9))
+            .unwrap();
+        assert_eq!(history.epochs(), 30);
+        assert!(history.validation().is_empty());
+    }
+
+    #[test]
+    fn stops_when_the_validation_loss_stops_improving_and_keeps_the_best_network() {
+        let early_stopping = EarlyStopping::new(0.25, 5).unwrap();
+        let data = noise(40, 8);
+        let mut network = wide_network();
+        let mut trainer = Trainer::new(SoftmaxCrossEntropy, Sgd::new(0.5).unwrap(), 4, 500)
+            .unwrap()
+            .with_early_stopping(early_stopping);
+        assert_eq!(trainer.early_stopping(), Some(early_stopping));
+        let history = trainer.fit(&mut network, &data, &mut Rng::new(9)).unwrap();
+        let best = history.best_epoch().unwrap();
+        assert!(history.epochs() < 500, "{} epochs", history.epochs());
+        assert_eq!(history.epochs(), best + 5 + 1);
+        assert_eq!(history.validation().len(), history.epochs());
+        let (_, validation) = early_stopping.split(40, &mut Rng::new(9)).unwrap();
+        let set = data.select(&validation);
+        assert_eq!(
+            network.evaluate(set.inputs(), set.targets(), &SoftmaxCrossEntropy),
+            Ok(history.validation()[best])
+        );
+    }
+
+    #[test]
+    fn the_training_loss_only_counts_the_training_samples() {
+        let early_stopping = EarlyStopping::new(0.25, 1).unwrap();
+        let data = noise(8, 10);
+        let mut network = wide_network();
+        let history = Trainer::new(SoftmaxCrossEntropy, Frozen, 3, 1)
+            .unwrap()
+            .with_early_stopping(early_stopping)
+            .fit(&mut network, &data, &mut Rng::new(11))
+            .unwrap();
+        let (training, _) = early_stopping.split(8, &mut Rng::new(11)).unwrap();
+        let set = data.select(&training);
+        let expected = network
+            .evaluate(set.inputs(), set.targets(), &SoftmaxCrossEntropy)
+            .unwrap();
+        assert!(
+            (history.training()[0] - expected).abs() < 1e-6,
+            "{} instead of {expected}",
+            history.training()[0]
+        );
+    }
+
+    #[test]
+    fn reports_too_few_samples_for_validation() {
+        let mut network = wide_network();
+        let data = noise(4, 12);
+        assert_eq!(
+            trainer(SoftmaxCrossEntropy, 2, 5)
+                .with_early_stopping(EarlyStopping::new(0.1, 2).unwrap())
+                .fit(&mut network, &data, &mut Rng::new(13))
+                .err(),
+            Some("4 samples are too few to set aside 0.1 of them for validation".to_string())
         );
     }
 
