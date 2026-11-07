@@ -91,6 +91,9 @@ impl Matrix {
 
     pub fn matmul(&self, other: &Matrix) -> Matrix {
         assert_eq!(self.cols(), other.rows(), "matmul: {self} · {other}");
+        if is_sparse(&self.values) {
+            return Matrix::wrap(sparse_dot(&self.values, &other.values));
+        }
         Matrix::wrap(parallel_dot(self.values.view(), other.values.view()))
     }
 
@@ -100,6 +103,9 @@ impl Matrix {
             other.rows(),
             "transpose_matmul: {self}ᵀ · {other}"
         );
+        if is_sparse(&self.values) {
+            return Matrix::wrap(sparse_transpose_dot(&self.values, &other.values));
+        }
         Matrix::wrap(parallel_dot(self.values.t(), other.values.view()))
     }
 
@@ -187,6 +193,54 @@ impl Matrix {
     }
 }
 
+/// A matrix is sparse when at most one value in `SPARSE_RATIO` is not zero: a chessboard has at most 32 pieces
+/// among its 769 inputs, so the first layer reads very sparse inputs, unlike the next ones.
+const SPARSE_RATIO: usize = 8;
+/// Rows of the output computed by one task of a sparse product.
+const SPARSE_BLOCK_ROWS: usize = 64;
+
+fn is_sparse(values: &Array2<Scalar>) -> bool {
+    let non_zeros = values.iter().filter(|&&value| value != 0.0).count();
+    non_zeros * SPARSE_RATIO <= values.len()
+}
+
+/// `left · right`, adding only the rows of `right` that a non-zero value of `left` selects.
+fn sparse_dot(left: &Array2<Scalar>, right: &Array2<Scalar>) -> Array2<Scalar> {
+    let mut product = Array2::zeros((left.nrows(), right.ncols()));
+    let mut rows: Vec<_> = product.axis_iter_mut(Axis(0)).collect();
+    rows.par_iter_mut().enumerate().for_each(|(index, row)| {
+        for (inner, &value) in left.row(index).iter().enumerate() {
+            if value != 0.0 {
+                row.scaled_add(value, &right.row(inner));
+            }
+        }
+    });
+    product
+}
+
+/// `leftᵀ · right`, adding only the rows of `right` that a non-zero value of `left` selects.
+fn sparse_transpose_dot(left: &Array2<Scalar>, right: &Array2<Scalar>) -> Array2<Scalar> {
+    let mut product = Array2::zeros((left.ncols(), right.ncols()));
+    let mut blocks: Vec<_> = product
+        .axis_chunks_iter_mut(Axis(0), SPARSE_BLOCK_ROWS)
+        .collect();
+    blocks
+        .par_iter_mut()
+        .enumerate()
+        .for_each(|(index, block)| {
+            let start = index * SPARSE_BLOCK_ROWS;
+            for sample in 0..left.nrows() {
+                for row in 0..block.nrows() {
+                    let value = left[[sample, start + row]];
+                    if value != 0.0 {
+                        block.row_mut(row).scaled_add(value, &right.row(sample));
+                    }
+                }
+            }
+        });
+    product
+}
+
 /// Output columns computed by one task when a product is split across threads.
 const PRODUCT_COLUMNS: usize = 32;
 /// Products smaller than this many multiply-adds are not worth the threads.
@@ -223,6 +277,39 @@ impl fmt::Display for Matrix {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sparse_products_give_the_same_values_as_dense_ones() {
+        // Three values per row of 300 are not zero, so the left operand takes the sparse path.
+        let sparse = |rows: usize| {
+            let mut m = Matrix::zeros(rows, 300);
+            for row in 0..rows {
+                for step in 0..3 {
+                    m.set(
+                        row,
+                        (row * 31 + step * 97) % 300,
+                        (row + step) as Scalar - 2.5,
+                    );
+                }
+            }
+            m
+        };
+        let dense = |rows: usize, cols: usize| {
+            let data = (0..rows * cols).map(|i| (i % 11) as Scalar * 0.25 - 1.0);
+            Matrix::from_vec(rows, cols, data.collect()).unwrap()
+        };
+        let (left, right) = (sparse(10), dense(300, 70));
+        assert!(is_sparse(&left.values));
+        assert_eq!(
+            left.matmul(&right),
+            Matrix::wrap(left.values.dot(&right.values))
+        );
+        let right = dense(10, 70);
+        assert_eq!(
+            left.transpose_matmul(&right),
+            Matrix::wrap(left.values.t().dot(&right.values))
+        );
+    }
 
     #[test]
     fn large_products_split_across_threads_give_the_same_values() {
