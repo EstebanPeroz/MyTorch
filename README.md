@@ -4,9 +4,14 @@ A neural network library written from scratch in Rust, and `my_torch_analyzer`, 
 predict the state of a chess game (check, checkmate, stalemate or nothing) from a chessboard in
 [FEN](https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation) notation.
 
-> **Status:** command-line parsing, labels and CHESSFILE reading are done. Training, prediction and network
-> generation are not implemented yet: those commands currently print `error: … is not implemented yet` and
-> exit with 84.
+> **Status:** the analyzer (`--train` and `--predict`) and the generator work. A trained
+> `my_torch_network*.nn` and the benchmarks are still to be produced from the dataset.
+
+A chessboard is given to the network as 769 inputs (12 piece planes of 64 squares, plus the side to move) and the
+network has 6 outputs, one per label. `configs/chess.conf` is the configuration of the network to train:
+`./my_torch_generator configs/chess.conf 1` creates `chess_1.nn`, then
+`./my_torch_analyzer --train --save my_torch_network.nn chess_1.nn dataset.txt` trains it. Duplicate chessboards
+are removed before training, and a prediction can never name the side to move as the attacker.
 
 ## Requirements
 
