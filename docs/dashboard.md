@@ -24,8 +24,16 @@ is the same as without the option.
 | Tiles | The current epoch out of the most epochs allowed, the last losses and accuracies, and the best epoch (the lowest validation loss) |
 | Loss chart | Training loss (solid) and validation loss (dashed), per epoch |
 | Accuracy chart | Training and validation accuracy, per epoch |
+| Macro F1, majority baseline | The unweighted mean of the per-label F1, and the accuracy of always predicting the most frequent label, which the network has to beat |
+| Confusion matrix | Expected labels in rows, predicted labels in columns, shaded by the share of each row (so the diagonal is the recall of each label), with the samples, precision, recall and F1 of each label below |
 | Table | The same values, in a `Show the values as a table` section, newest epoch first |
 | Hover | A tooltip with the values of the epoch under the pointer, on both charts |
+
+The matrix, the F1 and the baseline are measured after the last epoch, on the validation samples, or on the
+training samples when there is no validation split (the title says which). The F1 skips labels without any sample.
+Looking at the matrix instead of the accuracy alone shows which labels get mixed up, such as a checkmate predicted
+as a check. It is the confusion matrix and the per-class metrics that the training metrics document (PR #11,
+`docs/training-metrics.md`) lists as a next step.
 
 The validation curves only exist when the network file enables early stopping (as `configs/chess.conf` does).
 Accuracy is measured the same way as the final `accuracy:` line: the label chosen by `encoding::classify`, which
@@ -66,6 +74,9 @@ can see the end. Then it saves the network and exits.
   binary, with no external script or font, so it works offline) and `GET /metrics` returns the epochs so far as
   JSON. Each connection runs in its own thread and answers once.
 - The page draws the curves itself with SVG and follows the system's light or dark theme.
+- Each epoch, `modes::train` fills a `Confusion` (`src/confusion.rs`, counts of expected against predicted
+  labels) with `encoding::confusion` for the training and the validation samples. The accuracies of the charts
+  come from it, so one pass gives both. Only the latest matrix is sent; the page computes precision, recall and F1.
 - A value that is not a number (a diverged loss, for example) is sent as `null` and shown as a gap.
 
 ## Limits

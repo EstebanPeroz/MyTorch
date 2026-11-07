@@ -2,7 +2,8 @@ use std::path::Path;
 
 use my_torch::{Dataset, EpochReport, History, Model, Scalar};
 use my_torch_analyzer::chess_file::{ChessFile, Labels};
-use my_torch_analyzer::dashboard::{Dashboard, Point};
+use my_torch_analyzer::confusion::Confusion;
+use my_torch_analyzer::dashboard::{Dashboard, Point, Set};
 use my_torch_analyzer::encoding;
 use my_torch_analyzer::sample::Sample;
 
@@ -60,24 +61,34 @@ fn train_watched(
         Dashboard::start(model.trainer().epochs()).map_err(|error| format!("error: {error}"))?;
     eprintln!("dashboard: {}", dashboard.url());
     let trained = model.train_observed(dataset, |report| {
-        dashboard.record(point(report, samples));
+        let (point, confusion) = point(report, samples);
+        dashboard.record(point, confusion);
     });
     dashboard.finish(trained.as_ref().map(|_| ()).map_err(String::as_str));
     Ok(trained)
 }
 
-fn point(report: &EpochReport, samples: &[Sample]) -> Point {
-    let accuracy =
-        |rows: &[usize]| encoding::accuracy(report.network(), samples, rows).unwrap_or(Scalar::NAN);
-    Point {
+fn point(report: &EpochReport, samples: &[Sample]) -> (Point, Option<(Set, Confusion)>) {
+    // A matrix that cannot be measured (the network diverged) leaves gaps instead of stopping the training.
+    let measure = |rows: &[usize]| encoding::confusion(report.network(), samples, rows).ok();
+    let training = measure(report.training_samples());
+    let validation = report
+        .validation_loss()
+        .and_then(|_| measure(report.validation_samples()));
+    let accuracy = |confusion: Option<Confusion>| confusion.map_or(Scalar::NAN, |c| c.accuracy());
+    let point = Point {
         epoch: report.epoch(),
         training_loss: report.training_loss(),
         validation_loss: report.validation_loss(),
-        training_accuracy: accuracy(report.training_samples()),
-        validation_accuracy: report
-            .validation_loss()
-            .map(|_| accuracy(report.validation_samples())),
-    }
+        training_accuracy: accuracy(training),
+        validation_accuracy: report.validation_loss().map(|_| accuracy(validation)),
+    };
+    let shown = match (validation, training) {
+        (Some(confusion), _) => Some((Set::Validation, confusion)),
+        (None, Some(confusion)) => Some((Set::Training, confusion)),
+        (None, None) => None,
+    };
+    (point, shown)
 }
 
 fn load(path: &Path) -> Result<Model, String> {

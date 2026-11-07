@@ -7,6 +7,9 @@ use std::time::Duration;
 use my_torch::Scalar;
 use serde_json::{Value, json};
 
+use crate::confusion::Confusion;
+use crate::label::Label;
+
 const PAGE: &str = include_str!("dashboard.html");
 const REQUEST_LIMIT: usize = 8192;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
@@ -37,6 +40,22 @@ impl Point {
     }
 }
 
+/// The samples a confusion matrix was measured on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Set {
+    Training,
+    Validation,
+}
+
+impl Set {
+    fn name(self) -> &'static str {
+        match self {
+            Set::Training => "training",
+            Set::Validation => "validation",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 enum Status {
     Running,
@@ -48,6 +67,7 @@ enum Status {
 struct State {
     epochs: usize,
     points: Vec<Point>,
+    confusion: Option<(Set, Confusion)>,
     status: Status,
 }
 
@@ -63,6 +83,11 @@ impl State {
             "status": status,
             "message": message,
             "points": self.points.iter().map(|point| point.to_json()).collect::<Vec<_>>(),
+            "confusion": self.confusion.as_ref().map(|(set, confusion)| json!({
+                "on": set.name(),
+                "labels": Label::ALL.map(|label| label.to_string()),
+                "counts": confusion.counts(),
+            })),
         })
     }
 }
@@ -93,6 +118,7 @@ impl Dashboard {
         let state = Arc::new(Mutex::new(State {
             epochs,
             points: Vec::new(),
+            confusion: None,
             status: Status::Running,
         }));
         let served = Arc::clone(&state);
@@ -111,8 +137,14 @@ impl Dashboard {
         format!("http://{}", self.address)
     }
 
-    pub fn record(&self, point: Point) {
-        lock(&self.state).points.push(point);
+    /// Adds an epoch. `confusion` replaces the matrix the page shows: the labels the network gives to the
+    /// samples of one set after this epoch.
+    pub fn record(&self, point: Point, confusion: Option<(Set, Confusion)>) {
+        let mut state = lock(&self.state);
+        state.points.push(point);
+        if confusion.is_some() {
+            state.confusion = confusion;
+        }
     }
 
     /// Tells the page how the training ended, then keeps serving for a moment.
@@ -228,8 +260,8 @@ mod tests {
         assert_eq!(first["status"], "running");
         assert_eq!(first["points"], json!([]));
 
-        dashboard.record(point(1));
-        dashboard.record(point(2));
+        dashboard.record(point(1), None);
+        dashboard.record(point(2), None);
         let later = metrics(&dashboard);
         assert_eq!(later["points"].as_array().unwrap().len(), 2);
         assert_eq!(later["points"][1]["epoch"], 2);
@@ -239,12 +271,38 @@ mod tests {
     }
 
     #[test]
+    fn serves_the_latest_confusion_matrix_with_the_label_names() {
+        let dashboard = Dashboard::start(2).unwrap();
+        assert_eq!(metrics(&dashboard)["confusion"], Value::Null);
+
+        let mut first = Confusion::default();
+        first.record(Label::Nothing, Label::Stalemate);
+        dashboard.record(point(1), Some((Set::Validation, first)));
+        let mut second = Confusion::default();
+        second.record(Label::Stalemate, Label::Stalemate);
+        second.record(Label::Stalemate, Label::Stalemate);
+        dashboard.record(point(2), Some((Set::Validation, second)));
+        // An epoch without a matrix keeps the last one.
+        dashboard.record(point(3), None);
+
+        let confusion = &metrics(&dashboard)["confusion"];
+        assert_eq!(confusion["on"], "validation");
+        assert_eq!(confusion["labels"][0], "Nothing");
+        assert_eq!(confusion["labels"][5], "Stalemate");
+        assert_eq!(confusion["counts"][5][5], 2);
+        assert_eq!(confusion["counts"][0][5], 0);
+    }
+
+    #[test]
     fn a_value_that_is_not_a_number_becomes_null() {
         let dashboard = Dashboard::start(1).unwrap();
-        dashboard.record(Point {
-            training_loss: Scalar::NAN,
-            ..point(1)
-        });
+        dashboard.record(
+            Point {
+                training_loss: Scalar::NAN,
+                ..point(1)
+            },
+            None,
+        );
         assert_eq!(
             metrics(&dashboard)["points"][0]["training_loss"],
             Value::Null

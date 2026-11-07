@@ -296,6 +296,17 @@ fn the_dashboard_shows_the_training_live_and_changes_nothing_else() {
     let accuracy = points[2]["training_accuracy"].as_f64().unwrap();
     assert!((0.0..=1.0).contains(&accuracy), "{accuracy}");
     assert!(fetch(&url, "/").unwrap().contains("MyTorch training"));
+    // Without early stopping there is no validation set, so the matrix covers the training samples.
+    let confusion = &metrics["confusion"];
+    assert_eq!(confusion["on"], "training");
+    assert_eq!(confusion["labels"].as_array().unwrap().len(), 6);
+    let counted: u64 = confusion["counts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|row| row.as_array().unwrap())
+        .map(|count| count.as_u64().unwrap())
+        .sum();
 
     let mut stdout = String::new();
     child
@@ -306,6 +317,12 @@ fn the_dashboard_shows_the_training_live_and_changes_nothing_else() {
         .unwrap();
     assert_eq!(child.wait().unwrap().code(), Some(0));
     assert_eq!(stdout, outcome.stdout());
+    let trained_on: u64 = stdout
+        .strip_prefix("training on ")
+        .and_then(|rest| rest.split(' ').next())
+        .and_then(|count| count.parse().ok())
+        .expect(&stdout);
+    assert_eq!(counted, trained_on);
     assert_eq!(
         fs::read_to_string(&watched).unwrap(),
         fs::read_to_string(&plain).unwrap()
