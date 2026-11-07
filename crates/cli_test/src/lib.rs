@@ -62,6 +62,14 @@ impl Program {
 }
 
 impl Outcome {
+    pub fn code(&self) -> Option<i32> {
+        self.code
+    }
+
+    pub fn stdout(&self) -> &str {
+        &self.stdout
+    }
+
     #[track_caller]
     pub fn assert_success(&self, expected_stdout: &str) {
         assert_eq!(self.code, Some(0), "wrong exit code: {self}");
