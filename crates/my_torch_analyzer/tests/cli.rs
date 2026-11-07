@@ -1,5 +1,9 @@
 use std::fs;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::TcpStream;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use cli_test::Program;
 use my_torch::{Model, ModelConfig};
@@ -55,6 +59,14 @@ fn invalid_arguments_exit_with_84() {
             "unexpected argument '--unknown' found",
         ),
         (&["--train", "--save"], "a value is required for '--save"),
+        (
+            &["--predict", "--dashboard", "net.nn", "boards.txt"],
+            "the argument '--predict' cannot be used with '--dashboard'",
+        ),
+        (
+            &["--dashboard", "net.nn", "boards.txt"],
+            "the following required arguments were not provided",
+        ),
     ]);
 }
 
@@ -234,4 +246,68 @@ fn invalid_chess_files_exit_with_84() {
             "tests/fixtures/unlabeled.txt:1: missing label, required for training",
         ),
     ]);
+}
+
+fn fetch(url: &str, target: &str) -> Option<String> {
+    let mut stream = TcpStream::connect(url.strip_prefix("http://")?).ok()?;
+    write!(stream, "GET {target} HTTP/1.1\r\nHost: x\r\n\r\n").ok()?;
+    let mut response = String::new();
+    stream.read_to_string(&mut response).ok()?;
+    Some(response.split_once("\r\n\r\n")?.1.to_string())
+}
+
+#[test]
+fn the_dashboard_shows_the_training_live_and_changes_nothing_else() {
+    let plain = tiny_network("plain.nn");
+    let watched = tiny_network("watched.nn");
+    let outcome = analyzer().run(&["--train", path(&plain), LABELED]);
+    assert_eq!(outcome.code(), Some(0), "{outcome}");
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_my_torch_analyzer"))
+        .args(["--train", "--dashboard", path(&watched), LABELED])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stderr = BufReader::new(child.stderr.take().unwrap());
+    let mut line = String::new();
+    stderr.read_line(&mut line).unwrap();
+    let url = line
+        .trim()
+        .strip_prefix("dashboard: ")
+        .expect(&line)
+        .to_string();
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let metrics = loop {
+        let body = fetch(&url, "/metrics").expect("the dashboard stays up after the training");
+        let metrics: serde_json::Value = serde_json::from_str(&body).unwrap();
+        if metrics["status"] == "done" {
+            break metrics;
+        }
+        assert!(Instant::now() < deadline, "the training never finished");
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(metrics["epochs"], 3);
+    let points = metrics["points"].as_array().unwrap();
+    assert_eq!(points.len(), 3);
+    assert_eq!(points[2]["epoch"], 3);
+    assert!(points[2]["training_loss"].is_number());
+    let accuracy = points[2]["training_accuracy"].as_f64().unwrap();
+    assert!((0.0..=1.0).contains(&accuracy), "{accuracy}");
+    assert!(fetch(&url, "/").unwrap().contains("MyTorch training"));
+
+    let mut stdout = String::new();
+    child
+        .stdout
+        .take()
+        .unwrap()
+        .read_to_string(&mut stdout)
+        .unwrap();
+    assert_eq!(child.wait().unwrap().code(), Some(0));
+    assert_eq!(stdout, outcome.stdout());
+    assert_eq!(
+        fs::read_to_string(&watched).unwrap(),
+        fs::read_to_string(&plain).unwrap()
+    );
 }

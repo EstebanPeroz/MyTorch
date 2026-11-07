@@ -44,11 +44,12 @@ pub fn encode(board: &Board) -> [Scalar; INPUTS] {
 }
 
 pub fn inputs(samples: &[Sample]) -> Matrix {
-    let data = samples
-        .iter()
-        .flat_map(|sample| encode(sample.board()))
-        .collect();
-    Matrix::from_vec(samples.len(), INPUTS, data).expect("every board is encoded to INPUTS values")
+    encode_all(samples.len(), samples.iter())
+}
+
+fn encode_all<'a>(count: usize, samples: impl Iterator<Item = &'a Sample>) -> Matrix {
+    let data = samples.flat_map(|sample| encode(sample.board())).collect();
+    Matrix::from_vec(count, INPUTS, data).expect("every board is encoded to INPUTS values")
 }
 
 pub fn dataset(samples: &[Sample]) -> Result<Dataset, String> {
@@ -133,6 +134,28 @@ pub fn predict(network: &Network, samples: &[Sample]) -> Result<Vec<Label>, Stri
         );
     }
     Ok(labels)
+}
+
+/// The share of the labeled `samples` at `rows` that the network labels correctly, between 0 and 1. A
+/// sample without a label never counts as correct. Returns 0 for no rows.
+pub fn accuracy(network: &Network, samples: &[Sample], rows: &[usize]) -> Result<Scalar, String> {
+    if rows.is_empty() {
+        return Ok(0.0);
+    }
+    check_shape(network)?;
+    let mut correct = 0;
+    for chunk in rows.chunks(PREDICTION_BATCH) {
+        let chosen = || chunk.iter().map(|&row| &samples[row]);
+        let scores = network.predict(&encode_all(chunk.len(), chosen()))?;
+        check_finite(&scores)?;
+        correct += chosen()
+            .enumerate()
+            .filter(|(row, sample)| {
+                Some(classify(scores.row(*row), sample.board())) == sample.label()
+            })
+            .count();
+    }
+    Ok(correct as Scalar / rows.len() as Scalar)
 }
 
 #[cfg(test)]
@@ -235,5 +258,28 @@ mod tests {
         let mut scores = [0.0; OUTPUTS];
         scores[Label::Stalemate.index()] = 1.0;
         assert_eq!(classify(&scores, &board(START)), Label::Stalemate);
+    }
+
+    #[test]
+    fn accuracy_counts_the_correct_labels_among_the_chosen_rows() {
+        use my_torch::{Activation, Dense};
+        let samples: Vec<Sample> = [
+            format!("{START} Nothing"),
+            format!("{FOOLS_MATE} Checkmate Black"),
+            START.to_string(),
+        ]
+        .iter()
+        .map(|line| line.parse().unwrap())
+        .collect();
+        // With weights of 0, only the bias counts: every board is labeled Nothing.
+        let mut bias = Matrix::zeros(1, OUTPUTS);
+        bias.set(0, Label::Nothing.index(), 1.0);
+        let layer = Dense::new(Matrix::zeros(INPUTS, OUTPUTS), bias, Activation::Identity).unwrap();
+        let network = Network::new(vec![layer]).unwrap();
+        assert_eq!(accuracy(&network, &samples, &[]), Ok(0.0));
+        assert_eq!(accuracy(&network, &samples, &[0]), Ok(1.0));
+        assert_eq!(accuracy(&network, &samples, &[1]), Ok(0.0));
+        assert_eq!(accuracy(&network, &samples, &[2]), Ok(0.0));
+        assert_eq!(accuracy(&network, &samples, &[0, 1]), Ok(0.5));
     }
 }

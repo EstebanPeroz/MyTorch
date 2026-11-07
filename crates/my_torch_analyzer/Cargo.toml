@@ -8,6 +8,7 @@ clap.workspace = true
 cli_core.workspace = true
 chess_fen_parser.workspace = true
 my_torch.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 cli_test.workspace = true
