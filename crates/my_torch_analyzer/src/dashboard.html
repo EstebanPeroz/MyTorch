@@ -72,6 +72,13 @@ h1 { font-size: 20px; margin: 0; }
 .matrix td { border: 2px solid var(--card); border-radius: 4px; }
 .matrix .axis-title { color: var(--text-2); font-size: 12px; }
 .classes { margin-top: 12px; }
+.shape-card { margin-top: 16px; }
+.shape-card svg { display: block; width: 100%; height: auto; }
+.shape-card .box { fill: var(--surface); stroke: var(--training); stroke-width: 1.5; }
+.shape-card text { fill: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }
+.shape-card text.sub { fill: var(--text-2); font-size: 11px; }
+.shape-card line { stroke: var(--text-2); stroke-width: 1.5; }
+.shape-card polygon { fill: var(--text-2); }
 .classes th:first-child, .classes td:first-child { text-align: left; }
 details { margin-top: 16px; }
 summary { cursor: pointer; color: var(--text-2); }
@@ -117,6 +124,12 @@ th { color: var(--text-2); font-weight: 500; font-size: 13px; }
     </section>
   </div>
 
+  <section class="card shape-card" id="shape-card" hidden>
+    <h2 id="shape-title">Model shape</h2>
+    <div class="scroll" id="shape"></div>
+    <div class="scroll"><table class="classes" id="layers"></table></div>
+  </section>
+
   <section class="card matrix-card" id="matrix-card" hidden>
     <h2 id="matrix-title">Confusion matrix</h2>
     <p class="note">Each row is an expected label. Cell shading is the share of that row, so the diagonal is the recall of each label. The baseline is the accuracy of always predicting the most frequent label: the network has to beat it.</p>
@@ -143,7 +156,7 @@ const percent = (v) => (v == null ? "–" : (v * 100).toFixed(2) + "%");
 const axisLoss = (v) => v.toFixed(2);
 const axisPercent = (v) => (v * 100).toFixed(1) + "%";
 
-let data = { epochs: 0, status: "running", message: "", points: [], confusion: null };
+let data = { epochs: 0, layers: [], status: "running", message: "", points: [], confusion: null };
 let stopped = false; // the server no longer answers
 let hover = null; // index of the hovered point
 
@@ -287,6 +300,36 @@ function scores(counts) {
   return { rows, macro, baseline, n };
 }
 
+function renderShape() {
+  const layers = data.layers || [];
+  $("shape-card").hidden = layers.length === 0;
+  if (layers.length === 0) return;
+  const sizes = [layers[0].inputs, ...layers.map((l) => l.outputs)];
+  const total = layers.reduce((a, l) => a + l.parameters, 0);
+  $("shape-title").textContent = `Model shape: ${sizes.join(" → ")} (${total.toLocaleString("en-US")} parameters)`;
+
+  const boxW = 96, boxH = 46, gap = 56, pad = 4;
+  const width = pad * 2 + sizes.length * boxW + (sizes.length - 1) * gap;
+  let svg = `<svg viewBox="0 0 ${width} ${boxH + pad * 2}" style="min-width:${Math.min(width, 640)}px" role="img" aria-label="Layer sizes: ${sizes.join(", ")}">`;
+  sizes.forEach((size, i) => {
+    const x = pad + i * (boxW + gap);
+    const name = i === 0 ? "Input" : i === sizes.length - 1 ? "Output" : `Hidden ${i}`;
+    svg += `<rect class="box" x="${x}" y="${pad}" width="${boxW}" height="${boxH}" rx="8"/>`
+      + `<text x="${x + boxW / 2}" y="${pad + 20}" text-anchor="middle">${size}</text>`
+      + `<text class="sub" x="${x + boxW / 2}" y="${pad + 36}" text-anchor="middle">${name}</text>`;
+    if (i > 0) {
+      const x1 = x - gap + 4, x2 = x - 4, y = pad + boxH / 2;
+      svg += `<line x1="${x1 - boxW + boxW}" x2="${x2 - 6}" y1="${y}" y2="${y}"/>`
+        + `<polygon points="${x2},${y} ${x2 - 7},${y - 4} ${x2 - 7},${y + 4}"/>`;
+    }
+  });
+  $("shape").innerHTML = svg + `</svg>`;
+
+  $("layers").innerHTML = `<thead><tr><th>Layer</th><th>Inputs</th><th>Outputs</th><th>Activation</th><th>Parameters</th></tr></thead><tbody>`
+    + layers.map((l, i) => `<tr><td>${i + 1}</td><td>${l.inputs}</td><td>${l.outputs}</td>`
+      + `<td>${l.activation}</td><td>${l.parameters.toLocaleString("en-US")}</td></tr>`).join("") + `</tbody>`;
+}
+
 function renderConfusion() {
   const card = $("matrix-card");
   const c = data.confusion;
@@ -333,6 +376,7 @@ function render() {
   const best = rated.reduce((a, p) => (a === null || p.validation_loss < a.validation_loss ? p : a), null);
   $("t-best").textContent = best ? best.epoch : "–";
   charts.forEach(draw);
+  renderShape();
   renderConfusion();
   if ($("table-view").open) {
     $("rows").innerHTML = [...points].reverse().map((p) =>

@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::Duration;
 
-use my_torch::Scalar;
+use my_torch::{Network, Scalar};
 use serde_json::{Value, json};
 
 use crate::confusion::Confusion;
@@ -63,9 +63,25 @@ enum Status {
     Failed(String),
 }
 
+/// One dense layer of the network, as the page draws it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Layer {
+    inputs: usize,
+    outputs: usize,
+    activation: &'static str,
+}
+
+impl Layer {
+    /// The weights plus the biases.
+    fn parameters(self) -> usize {
+        self.inputs * self.outputs + self.outputs
+    }
+}
+
 #[derive(Debug)]
 struct State {
     epochs: usize,
+    layers: Vec<Layer>,
     points: Vec<Point>,
     confusion: Option<(Set, Confusion)>,
     status: Status,
@@ -80,6 +96,12 @@ impl State {
         };
         json!({
             "epochs": self.epochs,
+            "layers": self.layers.iter().map(|layer| json!({
+                "inputs": layer.inputs,
+                "outputs": layer.outputs,
+                "activation": layer.activation,
+                "parameters": layer.parameters(),
+            })).collect::<Vec<_>>(),
             "status": status,
             "message": message,
             "points": self.points.iter().map(|point| point.to_json()).collect::<Vec<_>>(),
@@ -108,8 +130,9 @@ pub struct Dashboard {
 }
 
 impl Dashboard {
-    /// Starts serving on a free port. `epochs` is the most epochs the training may run.
-    pub fn start(epochs: usize) -> Result<Dashboard, String> {
+    /// Starts serving on a free port. `epochs` is the most epochs the training may run, and `network` is the
+    /// shape the page shows.
+    pub fn start(epochs: usize, network: &Network) -> Result<Dashboard, String> {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
             .map_err(|error| format!("cannot start the dashboard: {error}"))?;
         let address = listener
@@ -117,6 +140,15 @@ impl Dashboard {
             .map_err(|error| format!("cannot start the dashboard: {error}"))?;
         let state = Arc::new(Mutex::new(State {
             epochs,
+            layers: network
+                .layers()
+                .iter()
+                .map(|layer| Layer {
+                    inputs: layer.input_size(),
+                    outputs: layer.output_size(),
+                    activation: layer.activation().name(),
+                })
+                .collect(),
             points: Vec::new(),
             confusion: None,
             status: Status::Running,
@@ -206,6 +238,27 @@ fn read_request(stream: &mut TcpStream) -> std::io::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use my_torch::{Activation, Dense, Matrix};
+
+    fn network() -> Network {
+        let layer = |inputs, outputs, activation| {
+            Dense::new(
+                Matrix::zeros(inputs, outputs),
+                Matrix::zeros(1, outputs),
+                activation,
+            )
+            .unwrap()
+        };
+        Network::new(vec![
+            layer(4, 3, Activation::Relu),
+            layer(3, 2, Activation::Identity),
+        ])
+        .unwrap()
+    }
+
+    fn start(epochs: usize) -> Dashboard {
+        Dashboard::start(epochs, &network()).unwrap()
+    }
 
     fn get(dashboard: &Dashboard, target: &str) -> (String, String) {
         request(
@@ -239,13 +292,13 @@ mod tests {
 
     #[test]
     fn listens_on_this_machine_only() {
-        let dashboard = Dashboard::start(10).unwrap();
+        let dashboard = start(10);
         assert!(dashboard.url().starts_with("http://127.0.0.1:"));
     }
 
     #[test]
     fn serves_the_page() {
-        let dashboard = Dashboard::start(10).unwrap();
+        let dashboard = start(10);
         let (status, body) = get(&dashboard, "/");
         assert_eq!(status, "HTTP/1.1 200 OK");
         assert_eq!(body, PAGE);
@@ -254,7 +307,7 @@ mod tests {
 
     #[test]
     fn serves_the_epochs_recorded_so_far() {
-        let dashboard = Dashboard::start(10).unwrap();
+        let dashboard = start(10);
         let first = metrics(&dashboard);
         assert_eq!(first["epochs"], 10);
         assert_eq!(first["status"], "running");
@@ -271,8 +324,19 @@ mod tests {
     }
 
     #[test]
+    fn serves_the_shape_of_the_network() {
+        let layers = &metrics(&start(1))["layers"];
+        assert_eq!(layers.as_array().unwrap().len(), 2);
+        assert_eq!(layers[0]["inputs"], 4);
+        assert_eq!(layers[0]["outputs"], 3);
+        assert_eq!(layers[0]["activation"], Activation::Relu.name());
+        assert_eq!(layers[0]["parameters"], 15);
+        assert_eq!(layers[1]["parameters"], 8);
+    }
+
+    #[test]
     fn serves_the_latest_confusion_matrix_with_the_label_names() {
-        let dashboard = Dashboard::start(2).unwrap();
+        let dashboard = start(2);
         assert_eq!(metrics(&dashboard)["confusion"], Value::Null);
 
         let mut first = Confusion::default();
@@ -295,7 +359,7 @@ mod tests {
 
     #[test]
     fn a_value_that_is_not_a_number_becomes_null() {
-        let dashboard = Dashboard::start(1).unwrap();
+        let dashboard = start(1);
         dashboard.record(
             Point {
                 training_loss: Scalar::NAN,
@@ -311,12 +375,12 @@ mod tests {
 
     #[test]
     fn tells_how_the_training_ended() {
-        let done = Dashboard::start(1).unwrap();
+        let done = start(1);
         let state = Arc::clone(&done.state);
         done.close(Ok(()), Duration::ZERO);
         assert_eq!(lock(&state).status, Status::Done);
 
-        let failed = Dashboard::start(1).unwrap();
+        let failed = start(1);
         let state = Arc::clone(&failed.state);
         failed.close(Err("diverged"), Duration::ZERO);
         let json = lock(&state).to_json();
@@ -326,7 +390,7 @@ mod tests {
 
     #[test]
     fn refuses_what_it_does_not_serve() {
-        let dashboard = Dashboard::start(1).unwrap();
+        let dashboard = start(1);
         assert_eq!(get(&dashboard, "/missing").0, "HTTP/1.1 404 Not Found");
         let post = request(&dashboard, "POST /metrics HTTP/1.1\r\n\r\n");
         assert_eq!(post.0, "HTTP/1.1 405 Method Not Allowed");
@@ -338,7 +402,7 @@ mod tests {
 
     #[test]
     fn a_silent_client_does_not_block_the_others() {
-        let dashboard = Dashboard::start(1).unwrap();
+        let dashboard = start(1);
         let _silent = TcpStream::connect(dashboard.address).unwrap();
         assert_eq!(get(&dashboard, "/metrics").0, "HTTP/1.1 200 OK");
     }

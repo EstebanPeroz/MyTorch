@@ -25,6 +25,7 @@ is the same as without the option.
 | Loss chart | Training loss (solid) and validation loss (dashed), per epoch |
 | Accuracy chart | Training and validation accuracy, per epoch |
 | Macro F1, majority baseline | The unweighted mean of the per-label F1, and the accuracy of always predicting the most frequent label, which the network has to beat |
+| Model shape | The layer sizes from the input to the output, with each layer's activation and number of parameters (weights and biases), drawn from the network the training starts with |
 | Confusion matrix | Expected labels in rows, predicted labels in columns, shaded by the share of each row (so the diagonal is the recall of each label), with the samples, precision, recall and F1 of each label below |
 | Table | The same values, in a `Show the values as a table` section, newest epoch first |
 | Hover | A tooltip with the values of the epoch under the pointer, on both charts |
