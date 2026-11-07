@@ -139,6 +139,28 @@ impl Matrix {
         )
     }
 
+    pub fn zip_apply(&mut self, other: &Matrix, function: impl Fn(Scalar, Scalar) -> Scalar) {
+        assert!(
+            self.rows() == other.rows() && self.cols() == other.cols(),
+            "zip_apply: {self} and {other}"
+        );
+        Zip::from(&mut self.values)
+            .and(&other.values)
+            .for_each(|value, &other| *value = function(*value, other));
+    }
+
+    pub fn apply(&mut self, function: impl Fn(Scalar) -> Scalar) {
+        self.values.mapv_inplace(function);
+    }
+
+    pub fn slice_rows(&self, start: usize, end: usize) -> Matrix {
+        assert!(
+            start < end && end <= self.rows(),
+            "slice_rows: rows {start}..{end} are outside {self}"
+        );
+        Matrix::wrap(self.values.slice(ndarray::s![start..end, ..]).to_owned())
+    }
+
     pub fn select_rows(&self, indices: &[usize]) -> Matrix {
         assert!(!indices.is_empty(), "select_rows: no rows selected");
         if let Some(row) = indices.iter().find(|&&row| row >= self.rows()) {
@@ -309,6 +331,32 @@ mod tests {
     #[should_panic(expected = "zip_map: 1 × 2 matrix and 2 × 1 matrix")]
     fn zip_map_panics_on_mismatched_shapes() {
         Matrix::zeros(1, 2).zip_map(&Matrix::zeros(2, 1), |x, _| x);
+    }
+
+    #[test]
+    fn zip_apply_updates_in_place() {
+        let mut a = matrix(&[&[1.0, 2.0]]);
+        a.zip_apply(&matrix(&[&[3.0, 4.0]]), |x, y| x * y);
+        assert_eq!(a, matrix(&[&[3.0, 8.0]]));
+    }
+
+    #[test]
+    #[should_panic(expected = "zip_apply: 1 × 2 matrix and 2 × 1 matrix")]
+    fn zip_apply_panics_on_mismatched_shapes() {
+        Matrix::zeros(1, 2).zip_apply(&Matrix::zeros(2, 1), |x, _| x);
+    }
+
+    #[test]
+    fn apply_and_slice_rows() {
+        let mut a = matrix(&[&[1.0], &[2.0], &[3.0]]);
+        a.apply(|x| x * 2.0);
+        assert_eq!(a.slice_rows(1, 3), matrix(&[&[4.0], &[6.0]]));
+    }
+
+    #[test]
+    #[should_panic(expected = "slice_rows: rows 2..4 are outside 3 × 1 matrix")]
+    fn slice_rows_panics_outside_the_matrix() {
+        Matrix::zeros(3, 1).slice_rows(2, 4);
     }
 
     #[test]
