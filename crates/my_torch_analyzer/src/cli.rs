@@ -5,7 +5,7 @@ use cli_core::Cli;
 
 pub enum Mode {
     Predict,
-    Train { save_file: PathBuf },
+    Train { save_file: PathBuf, dashboard: bool },
 }
 
 pub struct Args {
@@ -46,6 +46,13 @@ impl Cli for Args {
                     .value_parser(clap::value_parser!(PathBuf))
                     .conflicts_with("predict"),
             )
+            // Not in the help text, which is fixed by the subject: an extra, optional way to follow a training.
+            .arg(
+                Arg::new("dashboard")
+                    .long("dashboard")
+                    .action(ArgAction::SetTrue)
+                    .conflicts_with("predict"),
+            )
             .group(
                 ArgGroup::new("mode")
                     .args(["predict", "train"])
@@ -72,6 +79,7 @@ impl Cli for Args {
                     .get_one::<PathBuf>("save")
                     .cloned()
                     .unwrap_or_else(|| load_file.clone()),
+                dashboard: matches.get_flag("dashboard"),
             }
         } else {
             Mode::Predict
@@ -94,7 +102,7 @@ mod tests {
 
     fn train_save_file(args: &Args) -> Option<&Path> {
         match args.mode() {
-            Mode::Train { save_file } => Some(save_file),
+            Mode::Train { save_file, .. } => Some(save_file),
             Mode::Predict => None,
         }
     }
@@ -120,5 +128,28 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(train_save_file(&args), Some(Path::new("out.nn")));
+    }
+
+    #[test]
+    fn the_dashboard_is_optional_and_only_for_training() {
+        let dashboard = |args: &Args| {
+            matches!(
+                args.mode(),
+                Mode::Train {
+                    dashboard: true,
+                    ..
+                }
+            )
+        };
+        let plain = parse(&["--train", "net.nn", "boards.txt"])
+            .unwrap()
+            .unwrap();
+        assert!(!dashboard(&plain));
+        let watched = parse(&["--dashboard", "--train", "net.nn", "boards.txt"])
+            .unwrap()
+            .unwrap();
+        assert!(dashboard(&watched));
+        assert!(parse(&["--predict", "--dashboard", "net.nn", "boards.txt"]).is_err());
+        assert!(parse(&["--dashboard", "net.nn", "boards.txt"]).is_err());
     }
 }

@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MyTorch training</title>
+<style>
+:root {
+  color-scheme: light;
+  --surface: #fcfcfb;
+  --card: #ffffff;
+  --border: #e4e3de;
+  --grid: #ecebe6;
+  --text: #0b0b0b;
+  --text-2: #52514e;
+  --training: #2a78d6;
+  --validation: #eb6834;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --surface: #1a1a19;
+    --card: #222221;
+    --border: #353533;
+    --grid: #2d2d2b;
+    --text: #f0efec;
+    --text-2: #c3c2b7;
+    --training: #3987e5;
+    --validation: #d95926;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 24px 16px 48px;
+  background: var(--surface);
+  color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 1100px; margin: 0 auto; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; margin-bottom: 16px; }
+h1 { font-size: 20px; margin: 0; }
+#status { color: var(--text-2); }
+#status.failed { color: var(--text); font-weight: 600; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile, .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+.tile { padding: 10px 14px; }
+.tile .label { color: var(--text-2); font-size: 13px; }
+.tile .value { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 16px; }
+.card { padding: 14px 14px 8px; }
+.card h2 { font-size: 15px; margin: 0 0 4px; }
+.legend { display: flex; gap: 16px; color: var(--text-2); font-size: 13px; margin-bottom: 4px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.plot { position: relative; }
+.plot svg { display: block; width: 100%; height: 240px; touch-action: pan-y; }
+.axis text { fill: var(--text-2); font-size: 11px; font-variant-numeric: tabular-nums; }
+.grid line { stroke: var(--grid); }
+.empty { fill: var(--text-2); font-size: 13px; }
+.tooltip {
+  position: absolute; top: 8px; pointer-events: none; display: none;
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 6px 10px; font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.tooltip b { display: block; margin-bottom: 2px; }
+.matrix-card { margin-top: 16px; }
+.matrix-card .note { color: var(--text-2); font-size: 13px; margin: 0 0 8px; }
+.scroll { overflow-x: auto; }
+.matrix { width: auto; margin-top: 4px; }
+.matrix th, .matrix td { text-align: center; padding: 6px 10px; min-width: 64px; }
+.matrix th.row { text-align: right; white-space: nowrap; color: var(--text); font-weight: 500; }
+.matrix td { border: 2px solid var(--card); border-radius: 4px; }
+.matrix .axis-title { color: var(--text-2); font-size: 12px; }
+.classes { margin-top: 12px; }
+.shape-card { margin-top: 16px; }
+.shape-card svg { display: block; width: 100%; height: auto; }
+.shape-card .box { fill: var(--surface); stroke: var(--training); stroke-width: 1.5; }
+.shape-card text { fill: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }
+.shape-card text.sub { fill: var(--text-2); font-size: 11px; }
+.shape-card line { stroke: var(--text-2); stroke-width: 1.5; }
+.shape-card polygon { fill: var(--text-2); }
+.classes th:first-child, .classes td:first-child { text-align: left; }
+details { margin-top: 16px; }
+summary { cursor: pointer; color: var(--text-2); }
+table { border-collapse: collapse; width: 100%; margin-top: 8px; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 4px 10px; border-bottom: 1px solid var(--border); }
+th { color: var(--text-2); font-weight: 500; font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>MyTorch training</h1>
+    <span id="status" role="status">Waiting for the first epoch…</span>
+  </header>
+
+  <div class="tiles">
+    <div class="tile"><div class="label">Epoch</div><div class="value" id="t-epoch">–</div></div>
+    <div class="tile"><div class="label">Training loss</div><div class="value" id="t-loss">–</div></div>
+    <div class="tile"><div class="label">Validation loss</div><div class="value" id="t-vloss">–</div></div>
+    <div class="tile"><div class="label">Training accuracy</div><div class="value" id="t-acc">–</div></div>
+    <div class="tile"><div class="label">Validation accuracy</div><div class="value" id="t-vacc">–</div></div>
+    <div class="tile"><div class="label">Best epoch</div><div class="value" id="t-best">–</div></div>
+    <div class="tile"><div class="label">Macro F1</div><div class="value" id="t-f1">–</div></div>
+    <div class="tile"><div class="label">Majority baseline</div><div class="value" id="t-base">–</div></div>
+  </div>
+
+  <div class="charts">
+    <section class="card">
+      <h2>Loss</h2>
+      <div class="legend" aria-hidden="true">
+        <span><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--training)" stroke-width="2"/></svg>Training</span>
+        <span><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--validation)" stroke-width="2" stroke-dasharray="6 4"/></svg>Validation</span>
+      </div>
+      <div class="plot" id="loss"></div>
+    </section>
+    <section class="card">
+      <h2>Accuracy</h2>
+      <div class="legend" aria-hidden="true">
+        <span><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--training)" stroke-width="2"/></svg>Training</span>
+        <span><svg width="22" height="8"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--validation)" stroke-width="2" stroke-dasharray="6 4"/></svg>Validation</span>
+      </div>
+      <div class="plot" id="accuracy"></div>
+    </section>
+  </div>
+
+  <section class="card shape-card" id="shape-card" hidden>
+    <h2 id="shape-title">Model shape</h2>
+    <div class="scroll" id="shape"></div>
+    <div class="scroll"><table class="classes" id="layers"></table></div>
+  </section>
+
+  <section class="card matrix-card" id="matrix-card" hidden>
+    <h2 id="matrix-title">Confusion matrix</h2>
+    <p class="note">Each row is an expected label. Cell shading is the share of that row, so the diagonal is the recall of each label. The baseline is the accuracy of always predicting the most frequent label: the network has to beat it.</p>
+    <div class="scroll"><table class="matrix" id="matrix"></table></div>
+    <div class="scroll"><table class="classes" id="classes"></table></div>
+  </section>
+
+  <details id="table-view">
+    <summary>Show the values as a table</summary>
+    <table>
+      <thead><tr><th>Epoch</th><th>Training loss</th><th>Validation loss</th><th>Training accuracy</th><th>Validation accuracy</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </details>
+  <noscript>This page needs JavaScript to draw the curves.</noscript>
+</main>
+
+<script>
+"use strict";
+const POLL_MS = 500;
+const $ = (id) => document.getElementById(id);
+const loss = (v) => (v == null ? "–" : v.toFixed(4));
+const percent = (v) => (v == null ? "–" : (v * 100).toFixed(2) + "%");
+const axisLoss = (v) => v.toFixed(2);
+const axisPercent = (v) => (v * 100).toFixed(1) + "%";
+
+let data = { epochs: 0, layers: [], status: "running", message: "", points: [], confusion: null };
+let stopped = false; // the server no longer answers
+let hover = null; // index of the hovered point
+
+const charts = [
+  { el: $("loss"), name: "Loss", format: loss, axis: axisLoss,
+    series: [{ key: "training_loss", label: "Training", color: "--training", dash: "" },
+             { key: "validation_loss", label: "Validation", color: "--validation", dash: "6 4" }] },
+  { el: $("accuracy"), name: "Accuracy", format: percent, axis: axisPercent,
+    series: [{ key: "training_accuracy", label: "Training", color: "--training", dash: "" },
+             { key: "validation_accuracy", label: "Validation", color: "--validation", dash: "6 4" }] },
+];
+
+function niceStep(range, count) {
+  const raw = range / count;
+  const power = Math.pow(10, Math.floor(Math.log10(raw)));
+  const unit = raw / power;
+  return (unit <= 1 ? 1 : unit <= 2 ? 2 : unit <= 5 ? 5 : 10) * power;
+}
+
+function ticks(min, max, count) {
+  const step = niceStep(max - min, count);
+  const out = [];
+  for (let v = Math.ceil(min / step) * step; v <= max + step * 1e-9; v += step) out.push(v);
+  return out;
+}
+
+function number(v) {
+  return v != null && Number.isFinite(v);
+}
+
+function draw(chart) {
+  const width = Math.max(chart.el.clientWidth, 240);
+  const height = 240;
+  const m = { l: 52, r: 12, t: 10, b: 26 };
+  const points = data.points;
+  const values = chart.series.flatMap((s) => points.map((p) => p[s.key]).filter(number));
+  let svg = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${chart.name} per epoch">`;
+  if (values.length === 0) {
+    svg += `<text class="empty" x="${width / 2}" y="${height / 2}" text-anchor="middle">No data yet</text></svg>`;
+    chart.el.innerHTML = svg;
+    return;
+  }
+  let lo = Math.min(...values), hi = Math.max(...values);
+  if (hi - lo < 1e-9) { lo -= 0.5; hi += 0.5; }
+  const pad = (hi - lo) * 0.05;
+  lo -= pad; hi += pad;
+  const last = Math.max(points[points.length - 1].epoch, 2);
+  const x = (epoch) => m.l + ((epoch - 1) / (last - 1)) * (width - m.l - m.r);
+  const y = (v) => m.t + (1 - (v - lo) / (hi - lo)) * (height - m.t - m.b);
+
+  svg += `<g class="grid axis">`;
+  for (const t of ticks(lo, hi, 5)) {
+    svg += `<line x1="${m.l}" x2="${width - m.r}" y1="${y(t)}" y2="${y(t)}"/>`
+      + `<text x="${m.l - 8}" y="${y(t) + 4}" text-anchor="end">${chart.axis(t)}</text>`;
+  }
+  svg += `</g><g class="axis">`;
+  for (const t of ticks(1, last, Math.min(last - 1, 6))) {
+    svg += `<text x="${x(t)}" y="${height - 6}" text-anchor="middle">${Math.round(t)}</text>`;
+  }
+  svg += `</g>`;
+
+  for (const s of chart.series) {
+    let path = "", pen = "M";
+    for (const p of points) {
+      if (!number(p[s.key])) { pen = "M"; continue; }
+      path += `${pen}${x(p.epoch).toFixed(1)} ${y(p[s.key]).toFixed(1)}`;
+      pen = "L";
+    }
+    if (!path) continue;
+    svg += `<path d="${path}" fill="none" stroke="var(${s.color})" stroke-width="2" stroke-linejoin="round"`
+      + (s.dash ? ` stroke-dasharray="${s.dash}"` : "") + `/>`;
+    const tail = [...points].reverse().find((p) => number(p[s.key]));
+    svg += `<circle cx="${x(tail.epoch)}" cy="${y(tail[s.key])}" r="4" fill="var(${s.color})" stroke="var(--card)" stroke-width="2"/>`;
+  }
+
+  let tip = "";
+  if (hover !== null && points[hover]) {
+    const p = points[hover];
+    svg += `<line x1="${x(p.epoch)}" x2="${x(p.epoch)}" y1="${m.t}" y2="${height - m.b}" stroke="var(--text-2)" stroke-width="1" stroke-dasharray="2 3"/>`;
+    for (const s of chart.series) {
+      if (number(p[s.key])) {
+        svg += `<circle cx="${x(p.epoch)}" cy="${y(p[s.key])}" r="4" fill="var(${s.color})" stroke="var(--card)" stroke-width="2"/>`;
+      }
+    }
+    tip = { px: x(p.epoch), html: `<b>Epoch ${p.epoch}</b>` + chart.series.map((s) => `${s.label}: ${chart.format(p[s.key])}`).join("<br>") };
+  }
+  svg += `</svg><div class="tooltip" id="tip-${chart.el.id}"></div>`;
+  chart.el.innerHTML = svg;
+  chart.geometry = { x, m, width };
+
+  if (tip) {
+    const box = $(`tip-${chart.el.id}`);
+    box.innerHTML = tip.html;
+    box.style.display = "block";
+    box.style.left = (tip.px > width / 2 ? tip.px - box.offsetWidth - 10 : tip.px + 10) + "px";
+  }
+}
+
+function hoverAt(chart, event) {
+  const points = data.points;
+  if (!chart.geometry || points.length === 0) return;
+  const bounds = chart.el.getBoundingClientRect();
+  const { x, m, width } = chart.geometry;
+  const px = (event.clientX - bounds.left) * (width / bounds.width);
+  const last = Math.max(points[points.length - 1].epoch, 2);
+  const epoch = 1 + ((px - m.l) / (width - m.l - m.r)) * (last - 1);
+  const index = Math.min(points.length - 1, Math.max(0, Math.round(epoch) - 1));
+  if (index !== hover) { hover = index; render(); }
+}
+
+charts.forEach((chart) => {
+  chart.el.addEventListener("pointermove", (event) => hoverAt(chart, event));
+  chart.el.addEventListener("pointerleave", () => { hover = null; render(); });
+});
+window.addEventListener("resize", () => charts.forEach(draw));
+
+function statusText() {
+  if (data.status === "done") return "✓ Training done";
+  if (data.status === "failed") return "✕ Training failed" + (data.message ? ": " + data.message : "");
+  if (stopped) return "■ Connection lost: the program has stopped (showing the last data received)";
+  const n = data.points.length;
+  return n === 0 ? "Waiting for the first epoch…" : `● Training, epoch ${n} of at most ${data.epochs}`;
+}
+
+function scores(counts) {
+  const n = counts.length;
+  const rows = counts.map((row, i) => {
+    const support = row.reduce((a, b) => a + b, 0);
+    const predicted = counts.reduce((a, r) => a + r[i], 0);
+    const hit = counts[i][i];
+    const precision = predicted > 0 ? hit / predicted : null;
+    const recall = support > 0 ? hit / support : null;
+    const f1 = precision !== null && recall !== null && precision + recall > 0
+      ? (2 * precision * recall) / (precision + recall) : 0;
+    return { support, predicted, precision, recall, f1 };
+  });
+  const present = rows.filter((r) => r.support > 0);
+  const total = rows.reduce((a, r) => a + r.support, 0);
+  const macro = present.length ? present.reduce((a, r) => a + r.f1, 0) / present.length : null;
+  const baseline = total > 0 ? Math.max(...rows.map((r) => r.support)) / total : null;
+  return { rows, macro, baseline, n };
+}
+
+function renderShape() {
+  const layers = data.layers || [];
+  $("shape-card").hidden = layers.length === 0;
+  if (layers.length === 0) return;
+  const sizes = [layers[0].inputs, ...layers.map((l) => l.outputs)];
+  const total = layers.reduce((a, l) => a + l.parameters, 0);
+  $("shape-title").textContent = `Model shape: ${sizes.join(" → ")} (${total.toLocaleString("en-US")} parameters)`;
+
+  const boxW = 96, boxH = 46, gap = 56, pad = 4;
+  const width = pad * 2 + sizes.length * boxW + (sizes.length - 1) * gap;
+  let svg = `<svg viewBox="0 0 ${width} ${boxH + pad * 2}" style="min-width:${Math.min(width, 640)}px" role="img" aria-label="Layer sizes: ${sizes.join(", ")}">`;
+  sizes.forEach((size, i) => {
+    const x = pad + i * (boxW + gap);
+    const name = i === 0 ? "Input" : i === sizes.length - 1 ? "Output" : `Hidden ${i}`;
+    svg += `<rect class="box" x="${x}" y="${pad}" width="${boxW}" height="${boxH}" rx="8"/>`
+      + `<text x="${x + boxW / 2}" y="${pad + 20}" text-anchor="middle">${size}</text>`
+      + `<text class="sub" x="${x + boxW / 2}" y="${pad + 36}" text-anchor="middle">${name}</text>`;
+    if (i > 0) {
+      const x1 = x - gap + 4, x2 = x - 4, y = pad + boxH / 2;
+      svg += `<line x1="${x1 - boxW + boxW}" x2="${x2 - 6}" y1="${y}" y2="${y}"/>`
+        + `<polygon points="${x2},${y} ${x2 - 7},${y - 4} ${x2 - 7},${y + 4}"/>`;
+    }
+  });
+  $("shape").innerHTML = svg + `</svg>`;
+
+  $("layers").innerHTML = `<thead><tr><th>Layer</th><th>Inputs</th><th>Outputs</th><th>Activation</th><th>Parameters</th></tr></thead><tbody>`
+    + layers.map((l, i) => `<tr><td>${i + 1}</td><td>${l.inputs}</td><td>${l.outputs}</td>`
+      + `<td>${l.activation}</td><td>${l.parameters.toLocaleString("en-US")}</td></tr>`).join("") + `</tbody>`;
+}
+
+function renderConfusion() {
+  const card = $("matrix-card");
+  const c = data.confusion;
+  if (!c) { card.hidden = true; $("t-f1").textContent = "–"; $("t-base").textContent = "–"; return; }
+  card.hidden = false;
+  const epoch = data.points.length ? data.points[data.points.length - 1].epoch : 0;
+  $("matrix-title").textContent = `Confusion matrix on the ${c.on} samples, after epoch ${epoch}`;
+  const { rows, macro, baseline } = scores(c.counts);
+  $("t-f1").textContent = percent(macro);
+  $("t-base").textContent = percent(baseline);
+
+  let html = `<thead><tr><th class="axis-title"></th><th class="axis-title" colspan="${c.labels.length}">Predicted</th></tr>`
+    + `<tr><th class="axis-title row">Expected</th>${c.labels.map((l) => `<th>${l}</th>`).join("")}</tr></thead><tbody>`;
+  c.counts.forEach((row, i) => {
+    html += `<tr><th class="row">${c.labels[i]}</th>`;
+    row.forEach((count, j) => {
+      const share = rows[i].support ? count / rows[i].support : 0;
+      const shade = Math.round(share * 85);
+      const light = share > 0.55;
+      html += `<td style="background:color-mix(in srgb, var(--training) ${shade}%, var(--card));`
+        + `color:${light ? "#fff" : "var(--text)"}" title="Expected ${c.labels[i]}, predicted ${c.labels[j]}: ${count}">${count}</td>`;
+    });
+    html += `</tr>`;
+  });
+  $("matrix").innerHTML = html + `</tbody>`;
+
+  $("classes").innerHTML = `<thead><tr><th>Label</th><th>Samples</th><th>Precision</th><th>Recall</th><th>F1</th></tr></thead><tbody>`
+    + rows.map((r, i) => `<tr><td>${c.labels[i]}</td><td>${r.support}</td><td>${percent(r.precision)}</td>`
+      + `<td>${percent(r.recall)}</td><td>${r.support ? percent(r.f1) : "–"}</td></tr>`).join("") + `</tbody>`;
+}
+
+function render() {
+  const points = data.points;
+  const last = points[points.length - 1];
+  const status = $("status");
+  status.textContent = statusText();
+  status.className = data.status === "failed" || (stopped && data.status === "running") ? "failed" : "";
+  $("t-epoch").textContent = last ? `${last.epoch} / ${data.epochs}` : "–";
+  $("t-loss").textContent = loss(last && last.training_loss);
+  $("t-vloss").textContent = loss(last && last.validation_loss);
+  $("t-acc").textContent = percent(last && last.training_accuracy);
+  $("t-vacc").textContent = percent(last && last.validation_accuracy);
+  const rated = points.filter((p) => number(p.validation_loss));
+  const best = rated.reduce((a, p) => (a === null || p.validation_loss < a.validation_loss ? p : a), null);
+  $("t-best").textContent = best ? best.epoch : "–";
+  charts.forEach(draw);
+  renderShape();
+  renderConfusion();
+  if ($("table-view").open) {
+    $("rows").innerHTML = [...points].reverse().map((p) =>
+      `<tr><td>${p.epoch}</td><td>${loss(p.training_loss)}</td><td>${loss(p.validation_loss)}</td>`
+      + `<td>${percent(p.training_accuracy)}</td><td>${percent(p.validation_accuracy)}</td></tr>`).join("");
+  }
+}
+
+$("table-view").addEventListener("toggle", render);
+
+async function poll() {
+  try {
+    const response = await fetch("/metrics", { cache: "no-store" });
+    data = await response.json();
+    stopped = false;
+  } catch (error) {
+    // The program exited. Keep what was received and say so.
+    stopped = true;
+    render();
+    return;
+  }
+  render();
+  if (data.status === "running") setTimeout(poll, POLL_MS);
+}
+
+render();
+poll();
+</script>
+</body>
+</html>

@@ -7,6 +7,7 @@ is in the [main README](../README.md).
 |---|---|
 | [architecture.md](architecture.md) | Workspace crates, how they depend on each other, design rules, error handling, current status |
 | [cli.md](cli.md) | Command-line behavior of both programs: arguments, validation rules, exit codes, help |
+| [dashboard.md](dashboard.md) | The optional `--dashboard` page that follows a training live: what it shows, how it works, its limits |
 | [labels.md](labels.md) | The outputs the network predicts: classes, colors, text format, class indices |
 | [chess-file.md](chess-file.md) | The CHESSFILE format, how it is read, its error messages, the `Board` type |
 | [my_torch.md](my_torch.md) | The neural network library: conventions (`f32`, one sample per row) and the `Matrix` type |

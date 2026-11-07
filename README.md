@@ -64,6 +64,10 @@ contain inputs to send to the neural network in FEN notation, and optionally an 
 ./my_torch_analyzer --predict my_torch_network.nn chessboards.txt
 ```
 
+To follow a training live (loss and accuracy per epoch) in a browser, add `--dashboard` to `--train`. It prints
+a `dashboard: http://127.0.0.1:PORT` line on stderr. It is an optional extra and is not part of the help text, see
+[docs/dashboard.md](docs/dashboard.md).
+
 Each line of a CHESSFILE is a FEN followed, optionally, by its expected output:
 
 ```
