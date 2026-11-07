@@ -189,6 +189,30 @@ A layer never changes while it computes: the weights only change in `update`, af
 The tests check `backward` against measured slopes: nudge each weight, bias and input by `±0.01`, compute the
 change in the output, and compare with what `backward` returned.
 
+### Dropout
+
+A layer can switch off a share of its outputs at random while it trains (`dense.with_dropout(0.3)`, or `"dropout":
+0.3` in a configuration). Each training step, each output of each sample is kept with probability `1 − rate` and
+set to 0 otherwise, and the kept ones are multiplied by `1 / (1 − rate)` ("inverted" dropout), so the expected
+value of an output does not change and predictions need no correction. A neuron can no longer count on a
+particular neighbour being there, so the layer learns several redundant ways to get to the answer instead of
+memorizing the training positions.
+
+- **Only training drops outputs.** `forward`, `predict` and `evaluate` never do: the validation loss is measured
+  on the whole network, while the training loss of an epoch is measured with the outputs switched off (so it is
+  higher than the same network would score on the same data in `evaluate`).
+- **Backward:** the gradient of a switched off output is 0, and the others are scaled like the outputs
+  (`forward_training` keeps the mask in the `DenseCache`).
+- **The output layer cannot have dropout** (`Network::new` and `Architecture::new` refuse it).
+- **Reproducible:** the masks come from the seed of the training, drawn per shard of 32 rows, so the same seed
+  still trains the same network, whatever the number of cores. A network without dropout draws nothing, and
+  trains exactly as before.
+- **Stored in the network file** (format version 2), because `--train` starts from a file that holds the
+  training settings. Version 1 files are still read, as layers without dropout.
+
+Good starting values are `0.2` to `0.5` on the wide hidden layers. It slows the training down (more epochs
+before the validation loss stops falling), so raise the number of epochs with it.
+
 ## Losses
 
 A loss turns the network's outputs into one number that says how wrong they are: 0 when they match the
@@ -465,8 +489,8 @@ followed by that many bytes of UTF-8.
 
 | Part | Content |
 |---|---|
-| header | the bytes `MTNN`, then the version of the format as a `u32` (1) |
-| layers | a `u32` count, then for each layer: its activation (name), its number of inputs and of neurons (`u32` each), its weights (`inputs × neurons` `f32`, one row per input) and its biases (`neurons` `f32`) |
+| header | the bytes `MTNN`, then the version of the format as a `u32` (2) |
+| layers | a `u32` count, then for each layer: its activation (name), its number of inputs and of neurons (`u32` each), its weights (`inputs × neurons` `f32`, one row per input) its biases (`neurons` `f32`) and its dropout rate (`f32`, version 2 only) |
 | loss | its name |
 | optimizer | its name, a `u32` number of settings, then each setting as a name and an `f32` |
 | training | the batch size, the number of epochs and the seed, as a `u64` each |
@@ -492,7 +516,7 @@ kept as text (about 60 bytes in all) so that a new activation, loss or optimizer
   problem gives the usual message, prefixed with the layer it is about (`layer 2: a layer with 64 outputs…`).
   A wrong header, an unknown version, a file that ends too early and bytes left after the end are refused
   with a message of their own.
-- **No other version is read.** Files written by the JSON format of the first versions are refused ("not a
+- **Version 1 is still read** (layers without a dropout rate). **No other version is:** files written by the JSON format of the first versions are refused ("not a
   network file"): generate and train them again.
 
 `Model::describe()` gives a readable summary of a model (the size of its file, each layer with the range of its
@@ -525,7 +549,7 @@ settings. It is read from a JSON file, the configuration file of the generator:
 | Field | Content |
 |---|---|
 | `inputs` | the number of inputs of the network |
-| `layers` | one object per layer, in order: its number of neurons, its activation and its initialization, by name (see [Names](#names)) |
+| `layers` | one object per layer, in order: its number of neurons, its activation and its initialization, by name (see [Names](#names)), and optionally its `dropout` rate (see [Dropout](#dropout), 0 by default) |
 | `training` | exactly the `training` section of a [network file](#network-files) |
 
 | Method | Result |
