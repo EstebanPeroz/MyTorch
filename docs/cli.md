@@ -74,8 +74,18 @@ must behave as the subject describes without the option. See [dashboard.md](dash
 | Only with `--train` | `--predict --dashboard a.nn boards.txt`, `--dashboard a.nn boards.txt` | error |
 | Without it, nothing changes | `--train a.nn boards.txt` | same output and same saved network |
 
-The parser resolves the save file itself, so the program receives `Mode::Train { save_file }` with a path that
-is always set.
+### `--mirror` (not in the help text)
+
+`--mirror` is a second extra: it adds to the training the mirror of every chessboard, see [mirror.md](mirror.md).
+Like `--dashboard`, it is optional, only works with `--train` and is absent from `help.txt`.
+
+| Rule | Example | Result |
+|---|---|---|
+| Only with `--train` | `--predict --mirror a.nn boards.txt`, `--mirror a.nn boards.txt` | error |
+| Without it, nothing changes | `--train a.nn boards.txt` | same output and same saved network |
+
+The parser resolves the save file itself, so the program receives `Mode::Train { save_file, .. }` with a path
+that is always set.
 
 **A mode is required.** The usage line shows the mode in brackets (`[--predict | --train …]`), which reads as
 optional, but neither mode is a sensible default. Running without a mode is therefore an error.
