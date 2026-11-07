@@ -48,7 +48,8 @@ pub fn train(
         let before = samples.len();
         let (samples, groups) = encoding::with_mirrors(samples);
         println!(
-            "training on {} more chessboards, the mirror of each one",
+            "training on {} chessboards in total, with {} mirrors added",
+            samples.len(),
             samples.len() - before
         );
         let dataset = encoding::grouped_dataset(&samples, groups)?;

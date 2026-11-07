@@ -193,7 +193,7 @@ fn mirroring_trains_on_the_mirror_of_every_chessboard_and_nothing_else_changes()
     assert!(
         outcome
             .stdout()
-            .contains("training on 3 more chessboards, the mirror of each one"),
+            .contains("training on 6 chessboards in total, with 3 mirrors added"),
         "{outcome}"
     );
     assert!(outcome.stdout().contains("accuracy: "), "{outcome}");
