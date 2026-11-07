@@ -116,6 +116,10 @@ impl Model {
                 weights.len(),
                 layer.biases().data().len(),
             );
+            if layer.dropout() > 0.0 {
+                text.pop();
+                text += &format!(", dropout {}\n", layer.dropout());
+            }
         }
         let optimizer = self.trainer.optimizer();
         let settings: Vec<String> = optimizer
