@@ -63,8 +63,48 @@ A new program only has to implement `Cli` and call `cli_core::run`; parsing, hel
 | Flags can come in any order | `--save out.nn --train a.nn boards.txt` | accepted |
 | Both files are required, nothing else | `--predict a.nn` or `--predict a.nn boards.txt extra` | error |
 
-The parser resolves the save file itself, so the program receives `Mode::Train { save_file }` with a path that
-is always set.
+### `--dashboard` (not in the help text)
+
+`--dashboard` is an extra option that follows a training live in a web page. It is optional, only works with
+`--train`, and is deliberately **absent from `help.txt`**: the help text is fixed by the subject, and the program
+must behave as the subject describes without the option. See [dashboard.md](dashboard.md).
+
+| Rule | Example | Result |
+|---|---|---|
+| Only with `--train` | `--predict --dashboard a.nn boards.txt`, `--dashboard a.nn boards.txt` | error |
+| Without it, nothing changes | `--train a.nn boards.txt` | same output and same saved network |
+
+### `--mirror` (not in the help text)
+
+`--mirror` is a second extra: it adds to the training the mirror of every chessboard, see [mirror.md](mirror.md).
+Like `--dashboard`, it is optional, only works with `--train` and is absent from `help.txt`.
+
+| Rule | Example | Result |
+|---|---|---|
+| Only with `--train` | `--predict --mirror a.nn boards.txt`, `--mirror a.nn boards.txt` | error |
+| Without it, nothing changes | `--train a.nn boards.txt` | same output and same saved network |
+
+### `--dump` (not in the help text)
+
+`--dump` prints what a network file holds instead of using it. Network files are binary, so this is how to read
+one: the size of the file, each layer (shape, activation, and the range of its weights) and the training
+settings. It is a third mode, so it excludes `--predict` and `--train`, and takes no CHESSFILE. Like the other
+extras, it is absent from `help.txt`.
+
+```sh
+./my_torch_analyzer --dump my_torch_network.nn
+```
+
+| Rule | Example | Result |
+|---|---|---|
+| Takes only a network file | `--dump a.nn` | accepted |
+| No CHESSFILE, no other mode or option | `--dump a.nn boards.txt`, `--dump --predict a.nn`, `--dump --save b.nn a.nn` | error |
+| An unreadable file is an error | `--dump missing.nn` | `error: cannot read missing.nn: …`, exit code 84 |
+
+The network is not checked against the chess encoding, so any network file can be dumped.
+
+The parser resolves the save file itself, so the program receives `Mode::Train { save_file, .. }` with a path
+that is always set.
 
 **A mode is required.** The usage line shows the mode in brackets (`[--predict | --train …]`), which reads as
 optional, but neither mode is a sensible default. Running without a mode is therefore an error.

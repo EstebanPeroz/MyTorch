@@ -1,7 +1,7 @@
 # The `my_torch` library
 
 `my_torch` is the neural network, written from scratch. It uses `ndarray` for matrix arithmetic, `rand` for
-random numbers and `serde_json` for network files (see [dependencies.md](dependencies.md)). It knows nothing about chess: the analyzer turns
+random numbers and `serde_json` for configuration files (see [dependencies.md](dependencies.md)). It knows nothing about chess: the analyzer turns
 chessboards into numbers and labels into target vectors, and `my_torch` only sees matrices.
 
 What exists today: the `Matrix` type, the random number generator (`Rng`), the starting weights
@@ -412,6 +412,25 @@ let trainer = Trainer::new(SoftmaxCrossEntropy, Sgd::new(0.01)?, 64, 1000)?
 early stopping, nothing changes: every sample is trained on, for exactly `epochs` epochs. Keras offers the same
 with `validation_split` and the `EarlyStopping(patience=…, restore_best_weights=True)` callback.
 
+### Watching a training
+
+`fit` returns its `History` only at the end. To follow a training while it runs, call
+`trainer.fit_observed(&mut network, &dataset, &mut rng, |report| …)` instead (`model.train_observed(&dataset, …)`
+for a `Model`). The closure runs at the end of every epoch, after the validation loss is measured and before
+early stopping decides to continue, with an `EpochReport`:
+
+| Method | Result |
+|---|---|
+| `epoch()`, `epochs()` | the number of this epoch (from 1), and the most epochs the training may run |
+| `training_loss()`, `validation_loss()` | the losses of this epoch; the second is `None` without early stopping |
+| `network()` | the network as it is after this epoch |
+| `training_samples()`, `validation_samples()` | the rows of the dataset used to train and held out; the second is empty without early stopping |
+
+The report hands over the network and the row indices rather than a metric, so the library stays ignorant of the
+problem: the caller computes what it needs (an accuracy, for example) on its own samples. The observer only
+reads, so a training with an observer gives exactly the same network and `History` as `fit`. A metric costs
+time only when an observer computes it.
+
 ## Model
 
 A `Model` is a network together with everything needed to train it: a `Trainer` (loss, optimizer, batch size,
@@ -423,8 +442,10 @@ again needs nothing but its file. Keras keeps the loss and the optimizer with th
 | `Model::new(network, trainer, seed)` | a model; refuses a loss that needs raw scores on a last layer that is not `Identity` |
 | `network()`, `trainer()`, `seed()` | reading the model; `trainer().loss()` and `trainer().optimizer()` give the loss and the optimizer |
 | `train(&dataset)` | `trainer.fit` on the model's network, shuffled with `Rng::new(seed)`; returns its `History` |
+| `train_observed(&dataset, observer)` | the same, calling `observer` after each epoch (see [Watching a training](#watching-a-training)) |
 | `save(path)`, `Model::load(path)` | writing and reading a network file (see [Network files](#network-files)) |
-| `to_json()`, `Model::from_json(&text)` | the same, as a string |
+| `to_bytes()`, `Model::from_bytes(&bytes)` | the same, as bytes |
+| `describe()` | a readable summary of the model |
 
 ```rust
 let network = architecture.build(&mut Rng::new(1));
@@ -439,53 +460,44 @@ same network.
 
 ### Network files
 
-`save` writes a model as JSON, on one line followed by a newline. Spread out, a network with one `2 → 1` layer
-looks like this:
+`save` writes a model in a small binary format. All numbers are little-endian; a "name" is one byte of length
+followed by that many bytes of UTF-8.
 
-```json
-{
-  "version": 1,
-  "layers": [
-    { "activation": "identity", "weights": [[0.5], [-1.0]], "biases": [0.25] }
-  ],
-  "training": {
-    "loss": "mean_squared_error",
-    "optimizer": { "name": "sgd", "learning_rate": 0.1 },
-    "batch_size": 4,
-    "epochs": 10,
-    "seed": 7
-  }
-}
-```
-
-| Field | Content |
+| Part | Content |
 |---|---|
-| `version` | the version of this format, 1. A file of another version is refused, so a future change of format cannot be misread. |
-| `layers` | one object per layer, in order: its activation by name (see [Names](#names)), its weights one row per input (`in × out`), and its biases (one per neuron) |
-| `training` | the loss by name, the optimizer by name with its settings, the batch size, the number of epochs, the seed of the shuffle, and `early_stopping` when it is on: `{ "validation": 0.1, "patience": 5 }` (see [Early stopping](#early-stopping)). Without that field, there is no early stopping. |
+| header | the bytes `MTNN`, then the version of the format as a `u32` (1) |
+| layers | a `u32` count, then for each layer: its activation (name), its number of inputs and of neurons (`u32` each), its weights (`inputs × neurons` `f32`, one row per input) and its biases (`neurons` `f32`) |
+| loss | its name |
+| optimizer | its name, a `u32` number of settings, then each setting as a name and an `f32` |
+| training | the batch size, the number of epochs and the seed, as a `u64` each |
+| early stopping | one byte, 0 (off) or 1 (on); when on, the validation share (`f32`) and the patience (`u64`) |
 
-Only what cannot be recomputed is stored. The sizes are not written: a layer's inputs and neurons are the shape
-of its weights. The initialization is not written either: it only chose the starting weights, which the file
-already holds.
+The file has nothing after that. Only what cannot be recomputed is stored: the sizes of a layer are the shape of
+its weights, and the initialization only chose the starting weights, which the file already holds. Names are
+kept as text (about 60 bytes in all) so that a new activation, loss or optimizer needs no change of format.
 
-- **Every weight comes back exactly.** `serde_json` writes each `f32` with the fewest digits that read back
-  as the same `f32` (`0.1`, not `0.100000001`), so a saved and reloaded network gives the same predictions to
-  the bit.
-- **A network whose training diverged cannot be saved.** JSON has no NaN or infinity, so `save` refuses a
-  weight or bias that is not a finite number instead of writing a file that could not be loaded. Loading
-  refuses them too: `serde_json` reads a number too large for an `f32`, such as `1e39`, as infinity.
+- **Every weight comes back exactly:** the `f32` are written bit for bit.
+- **Size:** 4 bytes per weight or bias. A `768 → 128 → 64 → 7` network (107,143 weights and biases) makes a
+  file of about 430 KB, against 1.3 MB for the JSON format it replaced.
+- **A network whose training diverged cannot be saved.** `save` refuses a weight or bias that is NaN or
+  infinite, and loading refuses them too, so a broken network cannot go through a file.
 - **A failed save never loses the previous file.** `save` writes to `path.tmp` first, then renames it over
   `path`, which replaces the file in one step. If writing fails (full disk, no permission), the temporary file
   is removed and the previous file is untouched. This matters because training saves into the file it loaded
   when no other file is given.
-- **Loading checks everything** by going through the same constructors as code: `Activation::from_name`,
-  `Matrix::from_rows`, `Dense::new`, `Network::new`, the name lookups, `Trainer::new` and `Model::new`. A
-  file can therefore not create a network that code could not, and each problem gives the usual message,
-  prefixed with the layer it is about: `layer 2: a layer with 64 outputs needs 1 × 64 biases, got a 1 × 63
-  matrix`. Fields that are missing, unknown or of the wrong type are reported by `serde_json` with their place
-  in the file: ``invalid network file: missing field `epochs` at line 1 column 912``.
-- **Size:** about 12 characters per weight or bias, so about 1.2 MB per 100,000. A `768 → 128 → 64 → 7`
-  network (107,143 weights and biases) makes a 1.3 MB file, written in 6 ms and read in 8 ms (release build).
+- **Loading checks everything**, and never trusts a size read from the file: the numbers of values are
+  compared with the bytes left before anything is allocated. The bytes then go through the same constructors as
+  code: `Activation::from_name`, `Matrix::from_vec`, `Dense::new`, `Network::new`, the name lookups,
+  `Trainer::new` and `Model::new`. A file can therefore not create a network that code could not, and each
+  problem gives the usual message, prefixed with the layer it is about (`layer 2: a layer with 64 outputs…`).
+  A wrong header, an unknown version, a file that ends too early and bytes left after the end are refused
+  with a message of their own.
+- **No other version is read.** Files written by the JSON format of the first versions are refused ("not a
+  network file"): generate and train them again.
+
+`Model::describe()` gives a readable summary of a model (the size of its file, each layer with the range of its
+weights, and the training settings). It is what `./my_torch_analyzer --dump NETWORK` prints, since the format is
+not meant to be read in an editor.
 
 ## Configurations
 

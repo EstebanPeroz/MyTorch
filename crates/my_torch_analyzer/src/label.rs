@@ -30,6 +30,15 @@ impl Label {
             .expect("Label::ALL lists every label")
     }
 
+    /// The label of the mirrored chessboard: the attacking color changes.
+    pub fn mirrored(self) -> Label {
+        match self {
+            Label::Check(color) => Label::Check(color.opposite()),
+            Label::Checkmate(color) => Label::Checkmate(color.opposite()),
+            Label::Nothing | Label::Stalemate => self,
+        }
+    }
+
     pub fn from_index(index: usize) -> Option<Label> {
         Label::ALL.get(index).copied()
     }
@@ -86,6 +95,23 @@ mod tests {
             assert_eq!(Label::from_index(expected), Some(label));
         }
         assert_eq!(Label::from_index(Label::COUNT), None);
+    }
+
+    #[test]
+    fn mirroring_changes_the_attacker_only() {
+        assert_eq!(
+            Label::Check(Color::White).mirrored(),
+            Label::Check(Color::Black)
+        );
+        assert_eq!(
+            Label::Checkmate(Color::Black).mirrored(),
+            Label::Checkmate(Color::White)
+        );
+        assert_eq!(Label::Nothing.mirrored(), Label::Nothing);
+        assert_eq!(Label::Stalemate.mirrored(), Label::Stalemate);
+        for label in Label::ALL {
+            assert_eq!(label.mirrored().mirrored(), label);
+        }
     }
 
     #[test]

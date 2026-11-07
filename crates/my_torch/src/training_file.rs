@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::early_stopping::EarlyStopping;
 use crate::losses::loss_from_name;
@@ -8,7 +8,7 @@ use crate::matrix::Scalar;
 use crate::optimizers::optimizer_from_settings;
 use crate::trainer::Trainer;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct TrainingFile {
     loss: String,
@@ -16,18 +16,18 @@ pub(crate) struct TrainingFile {
     batch_size: usize,
     epochs: usize,
     seed: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     early_stopping: Option<EarlyStoppingFile>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct OptimizerFile {
     name: String,
     #[serde(flatten)]
     settings: BTreeMap<String, Scalar>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EarlyStoppingFile {
     validation: Scalar,
@@ -35,22 +35,28 @@ struct EarlyStoppingFile {
 }
 
 impl TrainingFile {
-    pub(crate) fn new(trainer: &Trainer, seed: u64) -> TrainingFile {
+    pub(crate) fn from_parts(
+        loss: String,
+        optimizer: String,
+        settings: BTreeMap<String, Scalar>,
+        batch_size: usize,
+        epochs: usize,
+        seed: u64,
+        early_stopping: Option<(Scalar, usize)>,
+    ) -> TrainingFile {
         TrainingFile {
-            loss: trainer.loss().name().to_string(),
+            loss,
             optimizer: OptimizerFile {
-                name: trainer.optimizer().name().to_string(),
-                settings: trainer.optimizer().settings(),
+                name: optimizer,
+                settings,
             },
-            batch_size: trainer.batch_size(),
-            epochs: trainer.epochs(),
+            batch_size,
+            epochs,
             seed,
-            early_stopping: trainer
-                .early_stopping()
-                .map(|early_stopping| EarlyStoppingFile {
-                    validation: early_stopping.validation(),
-                    patience: early_stopping.patience(),
-                }),
+            early_stopping: early_stopping.map(|(validation, patience)| EarlyStoppingFile {
+                validation,
+                patience,
+            }),
         }
     }
 

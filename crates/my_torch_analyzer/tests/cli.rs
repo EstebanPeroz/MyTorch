@@ -1,5 +1,9 @@
 use std::fs;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::TcpStream;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use cli_test::Program;
 use my_torch::{Model, ModelConfig};
@@ -55,6 +59,22 @@ fn invalid_arguments_exit_with_84() {
             "unexpected argument '--unknown' found",
         ),
         (&["--train", "--save"], "a value is required for '--save"),
+        (
+            &["--predict", "--dashboard", "net.nn", "boards.txt"],
+            "the argument '--predict' cannot be used with '--dashboard'",
+        ),
+        (
+            &["--dashboard", "net.nn", "boards.txt"],
+            "the following required arguments were not provided",
+        ),
+        (
+            &["--predict", "--mirror", "net.nn", "boards.txt"],
+            "the argument '--predict' cannot be used with '--mirror'",
+        ),
+        (
+            &["--mirror", "net.nn", "boards.txt"],
+            "the following required arguments were not provided",
+        ),
     ]);
 }
 
@@ -91,6 +111,41 @@ fn tiny_network(name: &str) -> PathBuf {
 
 fn path(path: &Path) -> &str {
     path.to_str().unwrap()
+}
+
+#[test]
+fn dump_prints_what_the_network_file_holds() {
+    let network = tiny_network("dump.nn");
+    let outcome = analyzer().run(&["--dump", path(&network)]);
+    let size = fs::metadata(&network).unwrap().len();
+    assert_eq!(outcome.code(), Some(0), "{outcome}");
+    let stdout = outcome.stdout();
+    assert!(
+        stdout.starts_with(&format!(
+            "file: {size} bytes, format version 1\nnetwork: 769 → "
+        )),
+        "{outcome}"
+    );
+    for expected in [
+        "  layer 1: 769 → ",
+        "training:\n",
+        "  loss: ",
+        "  seed: 1\n",
+    ] {
+        assert!(stdout.contains(expected), "{expected:?} missing: {outcome}");
+    }
+}
+
+#[test]
+fn dump_reports_unreadable_files_with_84() {
+    let garbage = temporary("dump_garbage.nn");
+    fs::write(&garbage, "not a network").unwrap();
+    analyzer()
+        .run(&["--dump", "tests/fixtures/missing.nn"])
+        .assert_error("cannot read tests/fixtures/missing.nn");
+    analyzer()
+        .run(&["--dump", path(&garbage)])
+        .assert_error(&format!("{}: invalid network file", garbage.display()));
 }
 
 #[test]
@@ -138,12 +193,12 @@ fn predict_never_gives_the_color_of_the_side_to_move() {
 #[test]
 fn train_saves_into_the_load_file_by_default() {
     let network = tiny_network("train.nn");
-    let before = fs::read_to_string(&network).unwrap();
+    let before = fs::read(&network).unwrap();
     let outcome = analyzer().run(&["--train", path(&network), LABELED]);
     assert_eq!(outcome.code(), Some(0), "{outcome}");
     assert!(outcome.stdout().contains("epoch 3: loss"), "{outcome}");
     assert!(outcome.stdout().contains("accuracy: "), "{outcome}");
-    assert_ne!(fs::read_to_string(&network).unwrap(), before);
+    assert_ne!(fs::read(&network).unwrap(), before);
     assert!(Model::load(&network).is_ok());
 }
 
@@ -151,11 +206,34 @@ fn train_saves_into_the_load_file_by_default() {
 fn train_with_save_leaves_the_load_file_untouched() {
     let network = tiny_network("source.nn");
     let saved = temporary("saved.nn");
-    let before = fs::read_to_string(&network).unwrap();
+    let before = fs::read(&network).unwrap();
     let outcome = analyzer().run(&["--train", "--save", path(&saved), path(&network), LABELED]);
     assert_eq!(outcome.code(), Some(0), "{outcome}");
-    assert_eq!(fs::read_to_string(&network).unwrap(), before);
-    assert_ne!(fs::read_to_string(&saved).unwrap(), before);
+    assert_eq!(fs::read(&network).unwrap(), before);
+    assert_ne!(fs::read(&saved).unwrap(), before);
+}
+
+#[test]
+fn mirroring_trains_on_the_mirror_of_every_chessboard_and_nothing_else_changes() {
+    let plain = tiny_network("unmirrored.nn");
+    let mirrored = tiny_network("mirrored.nn");
+    let outcome = analyzer().run(&["--train", path(&plain), LABELED]);
+    assert_eq!(outcome.code(), Some(0), "{outcome}");
+    assert!(outcome.stdout().contains("training on 3 chessboards"));
+    assert!(!outcome.stdout().contains("mirror"), "{outcome}");
+
+    let outcome = analyzer().run(&["--train", "--mirror", path(&mirrored), LABELED]);
+    assert_eq!(outcome.code(), Some(0), "{outcome}");
+    assert!(outcome.stdout().contains("training on 3 chessboards"));
+    assert!(
+        outcome
+            .stdout()
+            .contains("training on 6 chessboards in total, with 3 mirrors added"),
+        "{outcome}"
+    );
+    assert!(outcome.stdout().contains("accuracy: "), "{outcome}");
+    assert!(Model::load(&mirrored).is_ok());
+    assert_ne!(fs::read(&mirrored).unwrap(), fs::read(&plain).unwrap());
 }
 
 #[test]
@@ -234,4 +312,82 @@ fn invalid_chess_files_exit_with_84() {
             "tests/fixtures/unlabeled.txt:1: missing label, required for training",
         ),
     ]);
+}
+
+fn fetch(url: &str, target: &str) -> Option<String> {
+    let mut stream = TcpStream::connect(url.strip_prefix("http://")?).ok()?;
+    write!(stream, "GET {target} HTTP/1.1\r\nHost: x\r\n\r\n").ok()?;
+    let mut response = String::new();
+    stream.read_to_string(&mut response).ok()?;
+    Some(response.split_once("\r\n\r\n")?.1.to_string())
+}
+
+#[test]
+fn the_dashboard_shows_the_training_live_and_changes_nothing_else() {
+    let plain = tiny_network("plain.nn");
+    let watched = tiny_network("watched.nn");
+    let outcome = analyzer().run(&["--train", path(&plain), LABELED]);
+    assert_eq!(outcome.code(), Some(0), "{outcome}");
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_my_torch_analyzer"))
+        .args(["--train", "--dashboard", path(&watched), LABELED])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stderr = BufReader::new(child.stderr.take().unwrap());
+    let mut line = String::new();
+    stderr.read_line(&mut line).unwrap();
+    let url = line
+        .trim()
+        .strip_prefix("dashboard: ")
+        .expect(&line)
+        .to_string();
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let metrics = loop {
+        let body = fetch(&url, "/metrics").expect("the dashboard stays up after the training");
+        let metrics: serde_json::Value = serde_json::from_str(&body).unwrap();
+        if metrics["status"] == "done" {
+            break metrics;
+        }
+        assert!(Instant::now() < deadline, "the training never finished");
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(metrics["epochs"], 3);
+    let points = metrics["points"].as_array().unwrap();
+    assert_eq!(points.len(), 3);
+    assert_eq!(points[2]["epoch"], 3);
+    assert!(points[2]["training_loss"].is_number());
+    let accuracy = points[2]["training_accuracy"].as_f64().unwrap();
+    assert!((0.0..=1.0).contains(&accuracy), "{accuracy}");
+    assert!(fetch(&url, "/").unwrap().contains("MyTorch training"));
+    // Without early stopping there is no validation set, so the matrix covers the training samples.
+    let confusion = &metrics["confusion"];
+    assert_eq!(confusion["on"], "training");
+    assert_eq!(confusion["labels"].as_array().unwrap().len(), 6);
+    let counted: u64 = confusion["counts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|row| row.as_array().unwrap())
+        .map(|count| count.as_u64().unwrap())
+        .sum();
+
+    let mut stdout = String::new();
+    child
+        .stdout
+        .take()
+        .unwrap()
+        .read_to_string(&mut stdout)
+        .unwrap();
+    assert_eq!(child.wait().unwrap().code(), Some(0));
+    assert_eq!(stdout, outcome.stdout());
+    let trained_on: u64 = stdout
+        .strip_prefix("training on ")
+        .and_then(|rest| rest.split(' ').next())
+        .and_then(|count| count.parse().ok())
+        .expect(&stdout);
+    assert_eq!(counted, trained_on);
+    assert_eq!(fs::read(&watched).unwrap(), fs::read(&plain).unwrap());
 }

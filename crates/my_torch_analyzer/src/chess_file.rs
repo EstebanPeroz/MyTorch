@@ -2,6 +2,8 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader, ErrorKind};
 use std::path::Path;
 
+use rayon::prelude::*;
+
 use crate::sample::Sample;
 
 const BYTE_ORDER_MARK: char = '\u{feff}';
@@ -29,20 +31,43 @@ impl ChessFile {
     }
 
     fn parse(name: &str, reader: impl BufRead, labels: Labels) -> Result<Self, String> {
-        let mut samples = Vec::new();
+        let located =
+            |index: usize, message: String| format!("error: {name}:{}: {message}", index + 1);
+        // Reading lines is cheap, parsing them is not: read everything up to
+        // the first unreadable line, parse the lines in parallel, then report
+        // whichever problem comes first in the file.
+        let mut lines = Vec::new();
+        let mut unreadable = None;
         for (index, line) in reader.lines().enumerate() {
-            let located = |message: String| format!("error: {name}:{}: {message}", index + 1);
-            let line = line.map_err(|error| match error.kind() {
-                ErrorKind::InvalidData => located(error.to_string()),
-                _ => ChessFile::unreadable(name, &error),
-            })?;
-            let line = match index {
-                0 => line.strip_prefix(BYTE_ORDER_MARK).unwrap_or(&line),
-                _ => &line,
-            };
-            if !line.trim().is_empty() {
-                samples.push(ChessFile::parse_line(line, labels).map_err(located)?);
+            match line {
+                Ok(line) => lines.push((index, line)),
+                Err(error) => {
+                    unreadable = Some((index, error));
+                    break;
+                }
             }
+        }
+        let parsed: Vec<Result<Sample, (usize, String)>> = lines
+            .par_iter()
+            .filter_map(|(index, line)| {
+                let line = match index {
+                    0 => line.strip_prefix(BYTE_ORDER_MARK).unwrap_or(line),
+                    _ => line,
+                };
+                (!line.trim().is_empty()).then(|| {
+                    ChessFile::parse_line(line, labels).map_err(|message| (*index, message))
+                })
+            })
+            .collect();
+        let mut samples = Vec::with_capacity(parsed.len());
+        for sample in parsed {
+            samples.push(sample.map_err(|(index, message)| located(index, message))?);
+        }
+        if let Some((index, error)) = unreadable {
+            return Err(match error.kind() {
+                ErrorKind::InvalidData => located(index, error.to_string()),
+                _ => ChessFile::unreadable(name, &error),
+            });
         }
         if samples.is_empty() {
             return Err(format!("error: {name}: no chessboards"));
@@ -111,6 +136,19 @@ mod tests {
         );
         let content = format!("{START} Nothing\n{BYTE_ORDER_MARK}{START} Nothing\n");
         assert!(parse(&content, Labels::Optional).is_err());
+    }
+
+    #[test]
+    fn a_bad_line_is_reported_before_a_later_unreadable_one() {
+        let content = [
+            format!("{START} Nothing\n{START} Chek\n").as_bytes(),
+            b"\xa0\n",
+        ]
+        .concat();
+        assert_eq!(
+            parse(content, Labels::Optional),
+            Err("error: boards.txt:2: unknown label 'Chek'".to_string())
+        );
     }
 
     #[test]

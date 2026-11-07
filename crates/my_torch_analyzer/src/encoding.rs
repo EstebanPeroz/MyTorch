@@ -4,6 +4,7 @@ use my_torch::{Dataset, Matrix, Network, Scalar};
 
 use crate::board::{Board, PieceKind};
 use crate::color::Color;
+use crate::confusion::Confusion;
 use crate::label::Label;
 use crate::sample::Sample;
 
@@ -44,11 +45,12 @@ pub fn encode(board: &Board) -> [Scalar; INPUTS] {
 }
 
 pub fn inputs(samples: &[Sample]) -> Matrix {
-    let data = samples
-        .iter()
-        .flat_map(|sample| encode(sample.board()))
-        .collect();
-    Matrix::from_vec(samples.len(), INPUTS, data).expect("every board is encoded to INPUTS values")
+    encode_all(samples.len(), samples.iter())
+}
+
+fn encode_all<'a>(count: usize, samples: impl Iterator<Item = &'a Sample>) -> Matrix {
+    let data = samples.flat_map(|sample| encode(sample.board())).collect();
+    Matrix::from_vec(count, INPUTS, data).expect("every board is encoded to INPUTS values")
 }
 
 pub fn dataset(samples: &[Sample]) -> Result<Dataset, String> {
@@ -71,6 +73,29 @@ pub fn unique(samples: Vec<Sample>) -> Vec<Sample> {
         .collect()
 }
 
+/// Adds the mirrored chessboard of every sample (see `Board::mirrored`), unless its mirror is already there.
+/// Returns the samples with, for each, the number of the sample it
+/// comes from, so a chessboard and its mirror can be kept together when the data is split.
+///
+/// The `samples` must be unique, see `unique`: a copy whose chessboard is already known is skipped, and that
+/// is what keeps the result unique.
+pub fn with_mirrors(samples: Vec<Sample>) -> (Vec<Sample>, Vec<usize>) {
+    let mut seen: HashSet<Board> = samples
+        .iter()
+        .map(|sample| sample.board().clone())
+        .collect();
+    let mut groups: Vec<usize> = (0..samples.len()).collect();
+    let mut all = samples;
+    for group in 0..groups.len() {
+        let mirrored = all[group].mirrored();
+        if seen.insert(mirrored.board().clone()) {
+            all.push(mirrored);
+            groups.push(group);
+        }
+    }
+    (all, groups)
+}
+
 /// Counts the chessboards that appear with more than one label. `unique` keeps only the first label of each
 /// of them, so the result of a training depends on the order of the file.
 pub fn conflicts(samples: &[Sample]) -> usize {
@@ -83,6 +108,11 @@ pub fn conflicts(samples: &[Sample]) -> usize {
         }
     }
     conflicting.len()
+}
+
+/// Like `dataset`, and tells the trainer which rows belong together, see `Dataset::with_groups`.
+pub fn grouped_dataset(samples: &[Sample], groups: Vec<usize>) -> Result<Dataset, String> {
+    dataset(samples)?.with_groups(groups)
 }
 
 pub fn check_shape(network: &Network) -> Result<(), String> {
@@ -135,6 +165,31 @@ pub fn predict(network: &Network, samples: &[Sample]) -> Result<Vec<Label>, Stri
     Ok(labels)
 }
 
+/// How the network labels the `samples` at `rows`, against their expected labels. A sample without a
+/// label is skipped.
+pub fn confusion(
+    network: &Network,
+    samples: &[Sample],
+    rows: &[usize],
+) -> Result<Confusion, String> {
+    let mut confusion = Confusion::default();
+    if rows.is_empty() {
+        return Ok(confusion);
+    }
+    check_shape(network)?;
+    for chunk in rows.chunks(PREDICTION_BATCH) {
+        let chosen = || chunk.iter().map(|&row| &samples[row]);
+        let scores = network.predict(&encode_all(chunk.len(), chosen()))?;
+        check_finite(&scores)?;
+        for (row, sample) in chosen().enumerate() {
+            if let Some(expected) = sample.label() {
+                confusion.record(expected, classify(scores.row(row), sample.board()));
+            }
+        }
+    }
+    Ok(confusion)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -160,6 +215,45 @@ mod tests {
         assert_eq!(encode(&board(START))[SIDE_TO_MOVE], 1.0);
         let black = "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq d3 0 1";
         assert_eq!(encode(&board(black))[SIDE_TO_MOVE], 0.0);
+    }
+
+    fn sample(line: &str) -> Sample {
+        line.parse().unwrap()
+    }
+
+    #[test]
+    fn every_sample_gets_a_mirror_in_the_same_group() {
+        let samples = vec![
+            sample(&format!("{FOOLS_MATE} Checkmate Black")),
+            sample(&format!("{START} Nothing")),
+        ];
+        let (all, groups) = with_mirrors(samples.clone());
+        assert_eq!(groups, [0, 1, 0, 1]);
+        assert_eq!(all[..2], samples);
+        assert_eq!(all[2], samples[0].mirrored());
+        assert_eq!(all[3], samples[1].mirrored());
+        assert_eq!(all[2].label(), Some(Label::Checkmate(Color::White)));
+        assert_eq!(all[2].board().side_to_move(), Color::Black);
+    }
+
+    #[test]
+    fn a_mirror_that_is_already_there_is_not_added_twice() {
+        let samples = vec![
+            sample(&format!("{FOOLS_MATE} Checkmate Black")),
+            sample(&format!("{FOOLS_MATE} Checkmate Black")).mirrored(),
+        ];
+        let (all, groups) = with_mirrors(samples.clone());
+        assert_eq!(all, samples);
+        assert_eq!(groups, [0, 1]);
+        assert_eq!(unique(all.clone()), all);
+    }
+
+    #[test]
+    fn a_grouped_dataset_has_one_group_per_row() {
+        let samples = [sample(&format!("{START} Nothing"))];
+        let data = grouped_dataset(&samples, vec![0]).unwrap();
+        assert_eq!(data.groups(), Some(&[0][..]));
+        assert!(grouped_dataset(&samples, vec![0, 1]).is_err());
     }
 
     #[test]
@@ -235,5 +329,41 @@ mod tests {
         let mut scores = [0.0; OUTPUTS];
         scores[Label::Stalemate.index()] = 1.0;
         assert_eq!(classify(&scores, &board(START)), Label::Stalemate);
+    }
+
+    #[test]
+    fn the_confusion_covers_the_chosen_labeled_rows() {
+        use my_torch::{Activation, Dense};
+        let samples: Vec<Sample> = [
+            format!("{START} Nothing"),
+            format!("{FOOLS_MATE} Checkmate Black"),
+            START.to_string(),
+        ]
+        .iter()
+        .map(|line| line.parse().unwrap())
+        .collect();
+        // With weights of 0, only the bias counts: every board is labeled Nothing.
+        let mut bias = Matrix::zeros(1, OUTPUTS);
+        bias.set(0, Label::Nothing.index(), 1.0);
+        let layer = Dense::new(Matrix::zeros(INPUTS, OUTPUTS), bias, Activation::Identity).unwrap();
+        let network = Network::new(vec![layer]).unwrap();
+        assert_eq!(confusion(&network, &samples, &[]), Ok(Confusion::default()));
+        let first = confusion(&network, &samples, &[0]).unwrap();
+        assert_eq!(first.count(Label::Nothing, Label::Nothing), 1);
+        assert_eq!(first.accuracy(), 1.0);
+        let second = confusion(&network, &samples, &[1]).unwrap();
+        assert_eq!(
+            second.count(Label::Checkmate(Color::Black), Label::Nothing),
+            1
+        );
+        assert_eq!(second.accuracy(), 0.0);
+        // A sample without a label is skipped.
+        assert_eq!(confusion(&network, &samples, &[2]).unwrap().total(), 0);
+        assert_eq!(
+            confusion(&network, &samples, &[0, 1, 2])
+                .unwrap()
+                .accuracy(),
+            0.5
+        );
     }
 }
