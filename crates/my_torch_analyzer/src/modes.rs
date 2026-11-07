@@ -18,6 +18,12 @@ pub fn predict(load_file: &Path, chess_file: &Path) -> Result<(), String> {
 pub fn train(load_file: &Path, chess_file: &Path, save_file: &Path) -> Result<(), String> {
     let file = ChessFile::read(chess_file, Labels::Required)?;
     let mut model = load(load_file)?;
+    let conflicts = encoding::conflicts(file.samples());
+    if conflicts > 0 {
+        eprintln!(
+            "warning: {conflicts} chessboards have conflicting labels, only the first one is kept"
+        );
+    }
     let samples = encoding::unique(file.samples().to_vec());
     println!(
         "training on {} chessboards ({} duplicates removed)",

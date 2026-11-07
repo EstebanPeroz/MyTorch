@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use my_torch::{Dataset, Matrix, Network, Scalar};
 
@@ -71,6 +71,20 @@ pub fn unique(samples: Vec<Sample>) -> Vec<Sample> {
         .collect()
 }
 
+/// Counts the chessboards that appear with more than one label. `unique` keeps only the first label of each
+/// of them, so the result of a training depends on the order of the file.
+pub fn conflicts(samples: &[Sample]) -> usize {
+    let mut labels: HashMap<&Board, Option<Label>> = HashMap::new();
+    let mut conflicting = HashSet::new();
+    for sample in samples {
+        let first = labels.entry(sample.board()).or_insert(sample.label());
+        if *first != sample.label() {
+            conflicting.insert(sample.board());
+        }
+    }
+    conflicting.len()
+}
+
 pub fn check_shape(network: &Network) -> Result<(), String> {
     if network.input_size() != INPUTS || network.output_size() != OUTPUTS {
         return Err(format!(
@@ -82,6 +96,8 @@ pub fn check_shape(network: &Network) -> Result<(), String> {
     Ok(())
 }
 
+/// # Panics
+/// Panics if `scores` contains fewer than `OUTPUTS` values.
 pub fn classify(scores: &[Scalar], board: &Board) -> Label {
     let attacker = board.side_to_move().opposite();
     Label::ALL
@@ -94,10 +110,21 @@ pub fn classify(scores: &[Scalar], board: &Board) -> Label {
         .expect("Nothing is always possible")
 }
 
+fn check_finite(scores: &Matrix) -> Result<(), String> {
+    if scores.data().iter().any(|score| !score.is_finite()) {
+        return Err("the network produced a score that is not finite".into());
+    }
+    Ok(())
+}
+
 pub fn predict(network: &Network, samples: &[Sample]) -> Result<Vec<Label>, String> {
+    if !samples.is_empty() {
+        check_shape(network)?;
+    }
     let mut labels = Vec::with_capacity(samples.len());
     for chunk in samples.chunks(PREDICTION_BATCH) {
         let scores = network.predict(&inputs(chunk))?;
+        check_finite(&scores)?;
         labels.extend(
             chunk
                 .iter()
@@ -167,6 +194,29 @@ mod tests {
         let kept = unique(samples);
         assert_eq!(kept.len(), 2);
         assert_eq!(kept[0].board(), &board(START));
+    }
+
+    #[test]
+    fn counts_the_boards_with_conflicting_labels() {
+        let lines = [
+            format!("{START} Nothing"),
+            format!("{FOOLS_MATE} Checkmate Black"),
+            format!("{START} Stalemate"),
+            format!("{START} Nothing"),
+            format!("{FOOLS_MATE} Checkmate Black"),
+        ];
+        let samples: Vec<Sample> = lines.iter().map(|line| line.parse().unwrap()).collect();
+        assert_eq!(conflicts(&samples), 1);
+        assert_eq!(conflicts(&samples[..2]), 0);
+    }
+
+    #[test]
+    fn rejects_scores_that_are_not_finite() {
+        let finite = Matrix::from_rows(&[[0.0, 1.0]]).unwrap();
+        assert!(check_finite(&finite).is_ok());
+        for bad in [Scalar::NAN, Scalar::INFINITY, Scalar::NEG_INFINITY] {
+            assert!(check_finite(&Matrix::from_rows(&[[0.0, bad]]).unwrap()).is_err());
+        }
     }
 
     #[test]
