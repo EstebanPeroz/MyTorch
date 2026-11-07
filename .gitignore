@@ -33,3 +33,4 @@ rustc-ice-*.txt
 /*.nn
 !/my_torch_network*.nn
 /dataset/
+/.train
