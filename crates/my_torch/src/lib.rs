@@ -10,6 +10,7 @@ mod losses;
 mod matrix;
 mod model;
 mod model_config;
+mod model_file;
 mod names;
 mod network;
 mod optimizers;

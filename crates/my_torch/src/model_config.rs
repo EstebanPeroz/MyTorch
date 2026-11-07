@@ -93,6 +93,7 @@ impl LayerConfigFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
 
     const CONFIG: &str = r#"{
         "inputs": 2,
@@ -155,14 +156,24 @@ mod tests {
     }
 
     #[test]
-    fn a_network_file_holds_the_training_section_of_its_configuration() {
-        let json = ModelConfig::from_json(CONFIG)
-            .unwrap()
-            .generate(2)
-            .to_json()
-            .unwrap();
-        let training = r#""training":{"loss":"softmax_cross_entropy","optimizer":{"name":"sgd","learning_rate":0.1},"batch_size":4,"epochs":10,"seed":9,"early_stopping":{"validation":0.25,"patience":3}}}"#;
-        assert!(json.ends_with(training), "{json}");
+    fn a_generated_network_holds_the_training_section_of_its_configuration() {
+        let model = ModelConfig::from_json(CONFIG).unwrap().generate(2);
+        let loaded = Model::from_bytes(&model.to_bytes().unwrap()).unwrap();
+        assert_eq!(loaded.trainer().loss().name(), "softmax_cross_entropy");
+        assert_eq!(
+            loaded.trainer().optimizer().settings(),
+            BTreeMap::from([("learning_rate".to_string(), 0.1)])
+        );
+        assert_eq!(
+            (loaded.trainer().batch_size(), loaded.trainer().epochs()),
+            (4, 10)
+        );
+        assert_eq!(loaded.seed(), 9);
+        let early_stopping = loaded.trainer().early_stopping().unwrap();
+        assert_eq!(
+            (early_stopping.validation(), early_stopping.patience()),
+            (0.25, 3)
+        );
     }
 
     #[test]
