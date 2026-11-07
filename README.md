@@ -11,7 +11,7 @@ A chessboard is given to the network as 769 inputs (12 piece planes of 64 square
 network has 6 outputs, one per label. `configs/chess.conf` is the configuration of the network to train:
 `./my_torch_generator configs/chess.conf 1` creates `chess_1.nn`, then
 `./my_torch_analyzer --train --save my_torch_network.nn chess_1.nn dataset/full.txt` trains it (`make train` does
-both steps, with `--mirror`). Duplicate chessboards
+both steps, with `--mirror` and `--dashboard`). Duplicate chessboards
 are removed before training, and a prediction can never name the side to move as the attacker.
 
 ## Requirements
