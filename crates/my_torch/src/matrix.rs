@@ -1,6 +1,7 @@
 use std::fmt;
 
-use ndarray::{Array2, Axis, Zip};
+use ndarray::{Array2, ArrayView2, Axis, Zip, linalg::general_mat_mul};
+use rayon::prelude::*;
 
 pub type Scalar = f32;
 
@@ -90,7 +91,7 @@ impl Matrix {
 
     pub fn matmul(&self, other: &Matrix) -> Matrix {
         assert_eq!(self.cols(), other.rows(), "matmul: {self} · {other}");
-        Matrix::wrap(self.values.dot(&other.values))
+        Matrix::wrap(parallel_dot(self.values.view(), other.values.view()))
     }
 
     pub fn transpose_matmul(&self, other: &Matrix) -> Matrix {
@@ -99,7 +100,7 @@ impl Matrix {
             other.rows(),
             "transpose_matmul: {self}ᵀ · {other}"
         );
-        Matrix::wrap(self.values.t().dot(&other.values))
+        Matrix::wrap(parallel_dot(self.values.t(), other.values.view()))
     }
 
     pub fn matmul_transpose(&self, other: &Matrix) -> Matrix {
@@ -108,7 +109,7 @@ impl Matrix {
             other.cols(),
             "matmul_transpose: {self} · {other}ᵀ"
         );
-        Matrix::wrap(self.values.dot(&other.values.t()))
+        Matrix::wrap(parallel_dot(self.values.view(), other.values.t()))
     }
 
     pub fn add_row(&self, row: &Matrix) -> Matrix {
@@ -186,6 +187,33 @@ impl Matrix {
     }
 }
 
+/// Output columns computed by one task when a product is split across threads.
+const PRODUCT_COLUMNS: usize = 32;
+/// Products smaller than this many multiply-adds are not worth the threads.
+const PARALLEL_PRODUCT_WORK: usize = 1 << 20;
+
+/// `left · right`, with the output columns split across the rayon threads. Every output value is still one
+/// plain dot product, so the result is the same as a single `dot`, whatever the number of threads.
+fn parallel_dot(left: ArrayView2<Scalar>, right: ArrayView2<Scalar>) -> Array2<Scalar> {
+    let (rows, inner, cols) = (left.nrows(), left.ncols(), right.ncols());
+    if rows * inner * cols < PARALLEL_PRODUCT_WORK || cols < 2 * PRODUCT_COLUMNS {
+        return left.dot(&right);
+    }
+    let mut product = Array2::zeros((rows, cols));
+    let mut blocks: Vec<_> = product
+        .axis_chunks_iter_mut(Axis(1), PRODUCT_COLUMNS)
+        .collect();
+    blocks
+        .par_iter_mut()
+        .enumerate()
+        .for_each(|(index, block)| {
+            let start = index * PRODUCT_COLUMNS;
+            let right = right.slice(ndarray::s![.., start..start + block.ncols()]);
+            general_mat_mul(1.0, &left, &right, 0.0, block);
+        });
+    product
+}
+
 impl fmt::Display for Matrix {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "{} × {} matrix", self.rows(), self.cols())
@@ -195,6 +223,28 @@ impl fmt::Display for Matrix {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn large_products_split_across_threads_give_the_same_values() {
+        let value = |row: usize, col: usize| ((row * 7 + col * 13) % 17) as Scalar - 8.0;
+        let build = |rows: usize, cols: usize| {
+            let data = (0..rows * cols)
+                .map(|i| value(i / cols, i % cols))
+                .collect();
+            Matrix::from_vec(rows, cols, data).unwrap()
+        };
+        let (a, b) = (build(32, 300), build(300, 200));
+        let expected = Matrix::wrap(a.values.dot(&b.values));
+        assert_eq!(a.matmul(&b), expected);
+        assert_eq!(
+            build(300, 32).transpose_matmul(&b),
+            Matrix::wrap(build(300, 32).values.t().dot(&b.values))
+        );
+        assert_eq!(
+            a.matmul_transpose(&build(200, 300)),
+            Matrix::wrap(a.values.dot(&build(200, 300).values.t()))
+        );
+    }
 
     fn matrix(rows: &[&[Scalar]]) -> Matrix {
         Matrix::from_rows(rows).unwrap()

@@ -92,6 +92,24 @@ impl Dense {
         cache: &DenseCache,
         output_gradient: &Matrix,
     ) -> (Matrix, DenseGradients) {
+        let (z_gradient, gradients) = self.parameter_gradients(cache, output_gradient);
+        (z_gradient.matmul_transpose(&self.weights), gradients)
+    }
+
+    /// Like `backward`, without the gradient of the input: for the first layer, where nothing reads it.
+    pub fn backward_parameters(
+        &self,
+        cache: &DenseCache,
+        output_gradient: &Matrix,
+    ) -> DenseGradients {
+        self.parameter_gradients(cache, output_gradient).1
+    }
+
+    fn parameter_gradients(
+        &self,
+        cache: &DenseCache,
+        output_gradient: &Matrix,
+    ) -> (Matrix, DenseGradients) {
         assert!(
             output_gradient.rows() == cache.z.rows()
                 && output_gradient.cols() == self.output_size(),
@@ -105,7 +123,7 @@ impl Dense {
             weights: cache.input.transpose_matmul(&z_gradient),
             biases: z_gradient.sum_rows(),
         };
-        (z_gradient.matmul_transpose(&self.weights), gradients)
+        (z_gradient, gradients)
     }
 
     pub fn update(&mut self, gradients: &DenseGradients, rule: impl Fn(Scalar, Scalar) -> Scalar) {

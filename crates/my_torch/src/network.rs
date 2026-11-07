@@ -74,7 +74,12 @@ impl Network {
         let value = loss.value(&values, targets);
         let mut gradient = loss.gradient(&values, targets);
         let mut layers = Vec::with_capacity(self.layers.len());
-        for (layer, cache) in self.layers.iter().zip(&caches).rev() {
+        for (index, (layer, cache)) in self.layers.iter().zip(&caches).enumerate().rev() {
+            if index == 0 {
+                // Nothing reads the gradient of the network's inputs.
+                layers.push(layer.backward_parameters(cache, &gradient));
+                break;
+            }
             let (input_gradient, layer_gradients) = layer.backward(cache, &gradient);
             layers.push(layer_gradients);
             gradient = input_gradient;
