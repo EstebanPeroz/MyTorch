@@ -513,8 +513,8 @@ settings. It is read from a JSON file, the configuration file of the generator:
   ],
   "training": {
     "loss": "softmax_cross_entropy",
-    "optimizer": { "name": "sgd", "learning_rate": 0.01 },
-    "batch_size": 64,
+    "optimizer": { "name": "sgd", "learning_rate": 0.1 },
+    "batch_size": 512,
     "epochs": 100,
     "seed": 42,
     "early_stopping": { "validation": 0.1, "patience": 5 }
