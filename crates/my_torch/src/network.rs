@@ -1,6 +1,7 @@
 use crate::dense::{Dense, DenseGradients};
 use crate::losses::Loss;
 use crate::matrix::{Matrix, Scalar};
+use rayon::prelude::*;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Network {
@@ -80,6 +81,59 @@ impl Network {
         }
         layers.reverse();
         Ok((value, Gradients { layers }))
+    }
+
+    /// Same result as `gradients` (up to float summation order), computed on
+    /// shards of `shard_rows` rows in parallel. The shards only depend on
+    /// `shard_rows`, never on the number of cores, so the result is reproducible.
+    pub fn gradients_sharded(
+        &self,
+        inputs: &Matrix,
+        targets: &Matrix,
+        loss: &dyn Loss,
+        shard_rows: usize,
+    ) -> Result<(Scalar, Gradients), String> {
+        assert!(shard_rows > 0, "a shard needs at least one row");
+        let rows = inputs.rows();
+        if rows <= shard_rows {
+            return self.gradients(inputs, targets, loss);
+        }
+        self.check_inputs(inputs)?;
+        self.check_targets(inputs, targets)?;
+        let ranges: Vec<(usize, usize)> = (0..rows)
+            .step_by(shard_rows)
+            .map(|start| (start, (start + shard_rows).min(rows)))
+            .collect();
+        let results: Vec<Result<(Scalar, Gradients), String>> = ranges
+            .par_iter()
+            .with_max_len(1)
+            .map(|&(start, end)| {
+                let shard_inputs = inputs.slice_rows(start, end);
+                let shard_targets = targets.slice_rows(start, end);
+                self.gradients(&shard_inputs, &shard_targets, loss)
+            })
+            .collect();
+        let mut total = 0.0;
+        let mut combined: Option<Gradients> = None;
+        for (result, &(start, end)) in results.into_iter().zip(&ranges) {
+            let (value, mut gradients) = result?;
+            let weight = (end - start) as Scalar / rows as Scalar;
+            total += value * weight;
+            match combined.as_mut() {
+                None => {
+                    for layer in &mut gradients.layers {
+                        layer.scale(weight);
+                    }
+                    combined = Some(gradients);
+                }
+                Some(sum) => {
+                    for (layer, other) in sum.layers.iter_mut().zip(&gradients.layers) {
+                        layer.add_scaled(other, weight);
+                    }
+                }
+            }
+        }
+        Ok((total, combined.expect("there are several shards")))
     }
 
     pub fn evaluate(
@@ -363,6 +417,30 @@ mod tests {
             13,
         );
         assert_gradients_match_finite_differences(&regressor, &inputs, &targets, &MeanSquaredError);
+    }
+
+    #[test]
+    fn sharded_gradients_match_the_plain_ones() {
+        let mut rng = Rng::new(31);
+        let inputs = random_matrix(37, 3, &mut rng);
+        let targets = one_hot(37, 2, &mut rng);
+        let network = network(3, &[(4, Activation::Tanh), (2, Activation::Identity)], 32);
+        let (value, plain) = network
+            .gradients(&inputs, &targets, &SoftmaxCrossEntropy)
+            .unwrap();
+        for shard_rows in [1, 5, 16, 36, 37, 100] {
+            let (sharded_value, sharded) = network
+                .gradients_sharded(&inputs, &targets, &SoftmaxCrossEntropy, shard_rows)
+                .unwrap();
+            assert!((value - sharded_value).abs() < 1e-5, "{shard_rows}");
+            for (a, b) in plain.layers().iter().zip(sharded.layers()) {
+                for (x, y) in [(a.weights(), b.weights()), (a.biases(), b.biases())] {
+                    for (x, y) in x.data().iter().zip(y.data()) {
+                        assert!((x - y).abs() < 1e-5, "{shard_rows}: {x} vs {y}");
+                    }
+                }
+            }
+        }
     }
 
     #[test]

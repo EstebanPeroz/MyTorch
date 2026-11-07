@@ -3,7 +3,7 @@ use super::softmax_cross_entropy::SoftmaxCrossEntropy;
 use crate::matrix::{Matrix, Scalar};
 use crate::names::find_by_name;
 
-pub trait Loss {
+pub trait Loss: Sync {
     fn name(&self) -> &'static str;
 
     fn value(&self, outputs: &Matrix, targets: &Matrix) -> Scalar;
