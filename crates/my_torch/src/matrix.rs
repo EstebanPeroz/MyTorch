@@ -224,6 +224,28 @@ impl fmt::Display for Matrix {
 mod tests {
     use super::*;
 
+    #[test]
+    fn large_products_split_across_threads_give_the_same_values() {
+        let value = |row: usize, col: usize| ((row * 7 + col * 13) % 17) as Scalar - 8.0;
+        let build = |rows: usize, cols: usize| {
+            let data = (0..rows * cols)
+                .map(|i| value(i / cols, i % cols))
+                .collect();
+            Matrix::from_vec(rows, cols, data).unwrap()
+        };
+        let (a, b) = (build(32, 300), build(300, 200));
+        let expected = Matrix::wrap(a.values.dot(&b.values));
+        assert_eq!(a.matmul(&b), expected);
+        assert_eq!(
+            build(300, 32).transpose_matmul(&b),
+            Matrix::wrap(build(300, 32).values.t().dot(&b.values))
+        );
+        assert_eq!(
+            a.matmul_transpose(&build(200, 300)),
+            Matrix::wrap(a.values.dot(&build(200, 300).values.t()))
+        );
+    }
+
     fn matrix(rows: &[&[Scalar]]) -> Matrix {
         Matrix::from_rows(rows).unwrap()
     }
