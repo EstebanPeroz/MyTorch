@@ -56,7 +56,7 @@ These are hypotheses to test one at a time, not measured results.
    learning rate.
 4. **Capacity**: 769 inputs into 128 then 64 neurons is small for chess. Try wider or deeper networks, once the
    validation gap is visible.
-5. **Regularization** if the network overfits: L2 weight decay, dropout, more data. Early stopping already exists.
+5. **Regularization** if the network overfits: L2 weight decay, more data. Early stopping and dropout (`"dropout"` on a layer of the configuration) already exist.
 6. **Evaluate on a held-out test set** that is never used for tuning. Do not choose hyperparameters on the
    validation split that drives early stopping.
 

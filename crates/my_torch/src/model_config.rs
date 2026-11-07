@@ -6,6 +6,7 @@ use serde::Deserialize;
 use crate::activations::Activation;
 use crate::architecture::{Architecture, LayerSpec};
 use crate::initializations::initialization_from_name;
+use crate::matrix::Scalar;
 use crate::model::Model;
 use crate::rng::Rng;
 use crate::training_file::TrainingFile;
@@ -29,6 +30,8 @@ struct LayerConfigFile {
     neurons: usize,
     activation: String,
     initialization: String,
+    #[serde(default)]
+    dropout: Scalar,
 }
 
 impl ModelConfig {
@@ -86,7 +89,8 @@ impl LayerConfigFile {
             self.neurons,
             Activation::from_name(&self.activation)?,
             initialization_from_name(&self.initialization)?,
-        )
+        )?
+        .with_dropout(self.dropout)
     }
 }
 
@@ -269,6 +273,49 @@ mod tests {
         assert!(
             error.starts_with(&format!("cannot read {}: ", missing.display())),
             "{error}"
+        );
+    }
+
+    #[test]
+    fn reads_the_dropout_of_a_layer_and_defaults_to_none() {
+        let with = CONFIG.replace(
+            r#""activation": "tanh","#,
+            r#""activation": "tanh", "dropout": 0.25,"#,
+        );
+        let model = ModelConfig::from_json(&with).unwrap().generate(0);
+        let rates: Vec<_> = model
+            .network()
+            .layers()
+            .iter()
+            .map(|l| l.dropout())
+            .collect();
+        assert_eq!(rates, [0.25, 0.0]);
+        let model = ModelConfig::from_json(CONFIG).unwrap().generate(0);
+        assert!(!model.network().has_dropout());
+        let described = ModelConfig::from_json(&with)
+            .unwrap()
+            .generate(0)
+            .describe()
+            .unwrap();
+        assert!(
+            described.contains("3 biases, dropout 0.25\n"),
+            "{described}"
+        );
+        let too_much = CONFIG.replace(
+            r#""activation": "tanh","#,
+            r#""activation": "tanh", "dropout": 1.0,"#,
+        );
+        assert_eq!(
+            ModelConfig::from_json(&too_much).err(),
+            Some("layer 1: the dropout rate must be at least 0 and less than 1, got 1".to_string())
+        );
+        let on_output = CONFIG.replace(
+            r#""activation": "identity","#,
+            r#""activation": "identity", "dropout": 0.5,"#,
+        );
+        assert_eq!(
+            ModelConfig::from_json(&on_output).err(),
+            Some("the output layer cannot have dropout".to_string())
         );
     }
 }

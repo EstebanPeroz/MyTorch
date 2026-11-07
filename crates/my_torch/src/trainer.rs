@@ -1,3 +1,4 @@
+use rand::RngExt;
 use rand::seq::SliceRandom;
 
 use crate::activations::Activation;
@@ -135,14 +136,18 @@ impl Trainer {
         rng: &mut Rng,
     ) -> Result<Scalar, String> {
         order.shuffle(rng.generator());
+        let dropout = network.has_dropout();
         let mut total = 0.0;
         for indices in order.chunks(self.batch_size) {
             let batch = data.select(indices);
+            // Drawn only with dropout, so networks without it train exactly as before.
+            let dropout_seed = if dropout { rng.generator().random() } else { 0 };
             let (value, gradients) = network.gradients_sharded(
                 batch.inputs(),
                 batch.targets(),
                 self.loss.as_ref(),
                 SHARD_ROWS,
+                dropout_seed,
             )?;
             self.optimizer.step(network, &gradients);
             total += value * indices.len() as Scalar;

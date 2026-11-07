@@ -122,7 +122,7 @@ fn dump_prints_what_the_network_file_holds() {
     let stdout = outcome.stdout();
     assert!(
         stdout.starts_with(&format!(
-            "file: {size} bytes, format version 1\nnetwork: 769 → "
+            "file: {size} bytes, format version 2\nnetwork: 769 → "
         )),
         "{outcome}"
     );

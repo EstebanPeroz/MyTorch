@@ -2,18 +2,23 @@ use crate::activations::Activation;
 use crate::initializations::Initialization;
 use crate::matrix::{Matrix, Scalar};
 use crate::rng::Rng;
+use rand::RngExt;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Dense {
     weights: Matrix,
     biases: Matrix,
     activation: Activation,
+    /// Share of the outputs switched off at each training step. It only matters while training.
+    dropout: Scalar,
 }
 
 #[derive(Debug, Clone)]
 pub struct DenseCache {
     input: Matrix,
     z: Matrix,
+    /// The dropout mask of the step: 0 for a switched off output, `1 / (1 - dropout)` for the others.
+    mask: Option<Matrix>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -36,7 +41,20 @@ impl Dense {
             weights,
             biases,
             activation,
+            dropout: 0.0,
         })
+    }
+
+    /// The same layer, with a share `rate` of its outputs randomly switched off at each training step
+    /// (inverted dropout: the others are scaled up, so predictions need no correction).
+    pub fn with_dropout(mut self, rate: Scalar) -> Result<Dense, String> {
+        if !(0.0..1.0).contains(&rate) {
+            return Err(format!(
+                "the dropout rate must be at least 0 and less than 1, got {rate}"
+            ));
+        }
+        self.dropout = rate;
+        Ok(self)
     }
 
     pub fn random(
@@ -50,6 +68,7 @@ impl Dense {
             weights: initialization.weights(inputs, outputs, rng),
             biases: Matrix::zeros(1, outputs),
             activation,
+            dropout: 0.0,
         }
     }
 
@@ -73,6 +92,10 @@ impl Dense {
         self.activation
     }
 
+    pub fn dropout(&self) -> Scalar {
+        self.dropout
+    }
+
     pub fn forward(&self, input: &Matrix) -> Matrix {
         self.activation.apply(&self.weighted_sum(input))
     }
@@ -83,7 +106,32 @@ impl Dense {
         let cache = DenseCache {
             input: input.clone(),
             z,
+            mask: None,
         };
+        (output, cache)
+    }
+
+    /// Like `forward_cached`, with dropout: each output of each sample is switched off with probability
+    /// `dropout`, drawn from `rng`. A layer without dropout draws nothing.
+    pub fn forward_training(&self, input: &Matrix, rng: &mut Rng) -> (Matrix, DenseCache) {
+        let (output, mut cache) = self.forward_cached(input);
+        if self.dropout == 0.0 {
+            return (output, cache);
+        }
+        let keep = 1.0 - self.dropout;
+        let values = (0..output.rows() * output.cols())
+            .map(|_| {
+                if rng.generator().random::<Scalar>() < keep {
+                    1.0 / keep
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+        let mask = Matrix::from_vec(output.rows(), output.cols(), values)
+            .expect("one mask value per output");
+        let output = output.zip_map(&mask, |value, factor| value * factor);
+        cache.mask = Some(mask);
         (output, cache)
     }
 
@@ -117,6 +165,10 @@ impl Dense {
             self.output_size(),
             cache.z.rows()
         );
+        let output_gradient = match &cache.mask {
+            Some(mask) => &output_gradient.zip_map(mask, |g, factor| g * factor),
+            None => output_gradient,
+        };
         let z_gradient =
             output_gradient.zip_map(&self.activation.derivative(&cache.z), |g, d| g * d);
         let gradients = DenseGradients {
@@ -326,5 +378,87 @@ mod tests {
         dense.update(&gradients, |parameter, gradient| parameter - 0.5 * gradient);
         assert_eq!(dense.weights(), &matrix(&[&[0.5, -1.5], &[1.5, 0.0]]));
         assert_eq!(dense.biases(), &matrix(&[&[-0.5, -4.0]]));
+    }
+
+    #[test]
+    fn dropout_is_checked_and_starts_at_zero() {
+        assert_eq!(layer(Activation::Relu).dropout(), 0.0);
+        assert_eq!(
+            layer(Activation::Relu).with_dropout(0.3).unwrap().dropout(),
+            0.3
+        );
+        for rate in [-0.1, 1.0, 2.0, Scalar::NAN] {
+            assert!(
+                layer(Activation::Relu).with_dropout(rate).is_err(),
+                "{rate}"
+            );
+        }
+    }
+
+    #[test]
+    fn training_without_dropout_draws_nothing_and_matches_forward() {
+        let input = matrix(&[&[1.0, 1.0], &[0.0, 2.0]]);
+        let dense = layer(Activation::Relu);
+        let mut rng = Rng::new(1);
+        assert_eq!(
+            dense.forward_training(&input, &mut rng).0,
+            dense.forward(&input)
+        );
+        let mut untouched = Rng::new(1);
+        assert_eq!(
+            rng.generator().random::<u64>(),
+            untouched.generator().random::<u64>()
+        );
+    }
+
+    #[test]
+    fn dropout_switches_off_a_share_of_the_outputs_and_scales_the_others() {
+        let dense = Dense::random(
+            4,
+            200,
+            Activation::Identity,
+            &XavierNormal,
+            &mut Rng::new(2),
+        )
+        .with_dropout(0.25)
+        .unwrap();
+        let input = Matrix::from_vec(50, 4, vec![1.0; 200]).unwrap();
+        let plain = dense.forward(&input);
+        let (dropped, _) = dense.forward_training(&input, &mut Rng::new(3));
+        let mut off = 0;
+        for (a, b) in plain.data().iter().zip(dropped.data()) {
+            if *b == 0.0 {
+                off += 1;
+            } else {
+                assert!((b - a / 0.75).abs() < 1e-4, "{a} became {b}");
+            }
+        }
+        let share = off as Scalar / plain.data().len() as Scalar;
+        assert!(
+            (share - 0.25).abs() < 0.03,
+            "{share} of the outputs were switched off"
+        );
+    }
+
+    #[test]
+    fn the_gradient_does_not_flow_through_switched_off_outputs() {
+        let dense = Dense::random(3, 40, Activation::Tanh, &XavierNormal, &mut Rng::new(4))
+            .with_dropout(0.5)
+            .unwrap();
+        let input = Matrix::from_vec(2, 3, vec![0.5, -1.0, 2.0, 1.0, 0.3, -0.7]).unwrap();
+        let (output, cache) = dense.forward_training(&input, &mut Rng::new(5));
+        let ones = Matrix::from_vec(2, 40, vec![1.0; 80]).unwrap();
+        let (_, gradients) = dense.backward(&cache, &ones);
+        let mut off = 0;
+        for column in 0..40 {
+            if output.get(0, column) == 0.0 && output.get(1, column) == 0.0 {
+                off += 1;
+                assert!(gradients.biases().get(0, column) == 0.0, "column {column}");
+                for row in 0..3 {
+                    assert!(gradients.weights().get(row, column) == 0.0);
+                }
+            }
+        }
+        assert!(off > 0, "no neuron was switched off for both samples");
     }
 }

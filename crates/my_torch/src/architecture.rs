@@ -1,6 +1,7 @@
 use crate::activations::Activation;
 use crate::dense::Dense;
 use crate::initializations::Initialization;
+use crate::matrix::Scalar;
 use crate::network::Network;
 use crate::rng::Rng;
 
@@ -15,6 +16,7 @@ pub struct LayerSpec {
     neurons: usize,
     activation: Activation,
     initialization: Box<dyn Initialization>,
+    dropout: Scalar,
 }
 
 impl Architecture {
@@ -24,6 +26,9 @@ impl Architecture {
         }
         if layers.is_empty() {
             return Err("a network needs at least one layer".into());
+        }
+        if layers[layers.len() - 1].dropout != 0.0 {
+            return Err("the output layer cannot have dropout".into());
         }
         Ok(Architecture { inputs, layers })
     }
@@ -51,6 +56,8 @@ impl Architecture {
                 );
                 inputs = layer.neurons;
                 dense
+                    .with_dropout(layer.dropout)
+                    .expect("the dropout rate was checked")
             })
             .collect();
         Network::new(layers).expect("each layer takes the outputs of the one before it")
@@ -70,7 +77,23 @@ impl LayerSpec {
             neurons,
             activation,
             initialization: Box::new(initialization),
+            dropout: 0.0,
         })
+    }
+
+    /// Switches off a share `rate` of the outputs of the layer at each training step.
+    pub fn with_dropout(mut self, rate: Scalar) -> Result<LayerSpec, String> {
+        if !(0.0..1.0).contains(&rate) {
+            return Err(format!(
+                "the dropout rate must be at least 0 and less than 1, got {rate}"
+            ));
+        }
+        self.dropout = rate;
+        Ok(self)
+    }
+
+    pub fn dropout(&self) -> Scalar {
+        self.dropout
     }
 
     pub fn neurons(&self) -> usize {
@@ -163,6 +186,31 @@ mod tests {
         assert_ne!(
             architecture.build(&mut Rng::new(6)),
             architecture.build(&mut Rng::new(7))
+        );
+    }
+
+    #[test]
+    fn dropout_goes_to_the_built_layers_but_not_to_the_output_layer() {
+        let layer = |neurons, activation| LayerSpec::new(neurons, activation, HeNormal).unwrap();
+        let architecture = Architecture::new(
+            3,
+            vec![
+                layer(4, Activation::Relu).with_dropout(0.3).unwrap(),
+                layer(2, Activation::Identity),
+            ],
+        )
+        .unwrap();
+        let network = architecture.build(&mut Rng::new(1));
+        let dropouts: Vec<_> = network.layers().iter().map(Dense::dropout).collect();
+        assert_eq!(dropouts, [0.3, 0.0]);
+        assert!(layer(4, Activation::Relu).with_dropout(1.0).is_err());
+        assert_eq!(
+            Architecture::new(
+                3,
+                vec![layer(2, Activation::Identity).with_dropout(0.1).unwrap()]
+            )
+            .err(),
+            Some("the output layer cannot have dropout".to_string())
         );
     }
 }

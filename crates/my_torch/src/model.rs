@@ -116,6 +116,10 @@ impl Model {
                 weights.len(),
                 layer.biases().data().len(),
             );
+            if layer.dropout() > 0.0 {
+                text.pop();
+                text += &format!(", dropout {}\n", layer.dropout());
+            }
         }
         let optimizer = self.trainer.optimizer();
         let settings: Vec<String> = optimizer
@@ -200,7 +204,7 @@ mod tests {
     /// What `small()` must be saved as, written by hand.
     fn small_bytes() -> Vec<u8> {
         let mut bytes = b"MTNN".to_vec();
-        bytes.extend(1u32.to_le_bytes()); // version
+        bytes.extend(2u32.to_le_bytes()); // version
         bytes.extend(1u32.to_le_bytes()); // layers
         bytes.extend(b"\x08identity");
         bytes.extend(2u32.to_le_bytes()); // inputs
@@ -208,6 +212,7 @@ mod tests {
         for value in [0.5f32, -1.0, 0.25] {
             bytes.extend(value.to_le_bytes());
         }
+        bytes.extend(0f32.to_le_bytes()); // dropout
         bytes.extend(b"\x12mean_squared_error");
         bytes.extend(b"\x03sgd");
         bytes.extend(1u32.to_le_bytes()); // optimizer settings
@@ -220,6 +225,26 @@ mod tests {
         bytes
     }
 
+    #[test]
+    fn keeps_the_dropout_of_each_layer() {
+        let mut layers = network(Activation::Identity).layers().to_vec();
+        layers[0] = layers[0].clone().with_dropout(0.3).unwrap();
+        let model = Model::new(Network::new(layers).unwrap(), trainer(), 3).unwrap();
+        let loaded = Model::from_bytes(&model.to_bytes().unwrap()).unwrap();
+        assert_eq!(loaded.network(), model.network());
+        assert_eq!(loaded.network().layers()[0].dropout(), 0.3);
+    }
+
+    #[test]
+    fn still_reads_files_of_the_first_version_which_have_no_dropout() {
+        let version_2 = small_bytes();
+        let dropout_at = 4 + 4 + 4 + 9 + 4 + 4 + 3 * 4;
+        let mut version_1 = [&version_2[..dropout_at], &version_2[dropout_at + 4..]].concat();
+        version_1[4..8].copy_from_slice(&1u32.to_le_bytes());
+        let loaded = Model::from_bytes(&version_1).unwrap();
+        assert_eq!(loaded.to_bytes(), Ok(version_2));
+    }
+
     fn temporary(name: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!("my_torch_{name}_{}.nn", std::process::id()))
     }
@@ -227,7 +252,7 @@ mod tests {
     #[test]
     fn writes_the_network_and_its_training_settings_as_bytes() {
         assert_eq!(small().to_bytes(), Ok(small_bytes()));
-        assert_eq!(small_bytes().len(), 111);
+        assert_eq!(small_bytes().len(), 115);
     }
 
     #[test]
@@ -319,7 +344,12 @@ mod tests {
             bytes
         };
         let batch_and_epochs = [4u64.to_le_bytes(), 10u64.to_le_bytes()].concat();
-        let sizes = [2u32.to_le_bytes(), 1u32.to_le_bytes()].concat();
+        let sizes = [
+            &b"\x08identity"[..],
+            &2u32.to_le_bytes(),
+            &1u32.to_le_bytes(),
+        ]
+        .concat();
         let cases: Vec<(Vec<u8>, &str)> = vec![
             (
                 b"{}".to_vec(),
@@ -330,8 +360,8 @@ mod tests {
                 "not a network file (wrong header)",
             ),
             (
-                changed(b"MTNN\x01", b"MTNN\x02"),
-                "unsupported network file version 2, expected 1",
+                changed(b"MTNN\x02", b"MTNN\x03"),
+                "unsupported network file version 3, expected 2",
             ),
             (
                 valid[..30].to_vec(),
@@ -340,12 +370,25 @@ mod tests {
             (
                 changed(
                     &sizes,
-                    &[u32::MAX.to_le_bytes(), 1u32.to_le_bytes()].concat(),
+                    &[
+                        &b"\x08identity"[..],
+                        &u32::MAX.to_le_bytes(),
+                        &1u32.to_le_bytes(),
+                    ]
+                    .concat(),
                 ),
                 "layer 1: the file ends too early while reading the weights",
             ),
             (
-                changed(&sizes, &[2u32.to_le_bytes(), 0u32.to_le_bytes()].concat()),
+                changed(
+                    &sizes,
+                    &[
+                        &b"\x08identity"[..],
+                        &2u32.to_le_bytes(),
+                        &0u32.to_le_bytes(),
+                    ]
+                    .concat(),
+                ),
                 "layer 1: a matrix cannot be 2 × 0",
             ),
             (
@@ -528,7 +571,7 @@ mod tests {
 
     #[test]
     fn describes_the_model() {
-        let expected = "file: 111 bytes, format version 1\n\
+        let expected = "file: 115 bytes, format version 2\n\
 network: 2 → 1 (1 layers, 3 parameters)\n  \
 layer 1: 2 → 1, identity, 2 weights (min -1.0000, max 0.5000, mean -0.2500), 1 biases\n\
 training:\n  loss: mean_squared_error\n  optimizer: sgd (learning_rate 0.1)\n  batch size: 4\n  \
