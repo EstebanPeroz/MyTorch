@@ -1,46 +1,20 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
-
-use crate::activations::Activation;
 use crate::dataset::Dataset;
 use crate::dense::Dense;
 use crate::epoch_report::EpochReport;
 use crate::history::History;
-use crate::matrix::{Matrix, Scalar};
+use crate::matrix::Scalar;
+use crate::model_file;
 use crate::network::Network;
 use crate::rng::Rng;
 use crate::trainer::Trainer;
-use crate::training_file::TrainingFile;
-
-const FORMAT_VERSION: u32 = 1;
 
 pub struct Model {
     network: Network,
     trainer: Trainer,
     seed: u64,
-}
-
-#[derive(Deserialize)]
-struct FileVersion {
-    version: u32,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ModelFile {
-    version: u32,
-    layers: Vec<LayerFile>,
-    training: TrainingFile,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct LayerFile {
-    activation: String,
-    weights: Vec<Vec<Scalar>>,
-    biases: Vec<Scalar>,
 }
 
 impl Model {
@@ -82,9 +56,9 @@ impl Model {
 
     pub fn save(&self, path: impl AsRef<Path>) -> Result<(), String> {
         let path = path.as_ref();
-        let json = self.to_json()?;
+        let bytes = self.to_bytes()?;
         let temporary = temporary_path(path);
-        fs::write(&temporary, json + "\n")
+        fs::write(&temporary, bytes)
             .and_then(|()| fs::rename(&temporary, path))
             .map_err(|error| {
                 let _ = fs::remove_file(&temporary);
@@ -94,92 +68,86 @@ impl Model {
 
     pub fn load(path: impl AsRef<Path>) -> Result<Model, String> {
         let path = path.as_ref();
-        let text = fs::read_to_string(path)
-            .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
-        Model::from_json(&text).map_err(|error| format!("{}: {error}", path.display()))
+        let bytes =
+            fs::read(path).map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+        Model::from_bytes(&bytes)
+            .map_err(|error| format!("{}: invalid network file: {error}", path.display()))
     }
 
-    pub fn to_json(&self) -> Result<String, String> {
-        let layers = self
-            .network
-            .layers()
+    pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
+        model_file::encode(self.network.layers(), &self.trainer, self.seed)
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Model, String> {
+        model_file::decode(bytes)
+    }
+
+    /// A readable summary of the model, for `--dump`: the file it makes, each layer and the training settings.
+    pub fn describe(&self) -> Result<String, String> {
+        let size = self.to_bytes()?.len();
+        let layers = self.network.layers();
+        let mut shape = vec![self.network.input_size()];
+        shape.extend(layers.iter().map(Dense::output_size));
+        let shape: Vec<String> = shape.iter().map(usize::to_string).collect();
+        let parameters: usize = layers
             .iter()
-            .enumerate()
-            .map(|(index, layer)| {
-                LayerFile::from_dense(layer)
-                    .map_err(|error| format!("layer {}: {error}", index + 1))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let file = ModelFile {
-            version: FORMAT_VERSION,
-            layers,
-            training: TrainingFile::new(&self.trainer, self.seed),
-        };
-        Ok(serde_json::to_string(&file).expect("a model file only holds names and finite numbers"))
-    }
-
-    pub fn from_json(text: &str) -> Result<Model, String> {
-        let FileVersion { version } = serde_json::from_str(text).map_err(invalid_file)?;
-        if version != FORMAT_VERSION {
-            return Err(format!(
-                "unsupported network file version {version}, expected {FORMAT_VERSION}"
-            ));
+            .map(|layer| layer.weights().data().len() + layer.biases().data().len())
+            .sum();
+        let mut text = format!(
+            "file: {size} bytes, format version {}\nnetwork: {} ({} layers, {parameters} parameters)\n",
+            model_file::FORMAT_VERSION,
+            shape.join(" → "),
+            layers.len(),
+        );
+        for (index, layer) in layers.iter().enumerate() {
+            let weights = layer.weights().data();
+            let min = weights.iter().copied().fold(Scalar::INFINITY, Scalar::min);
+            let max = weights
+                .iter()
+                .copied()
+                .fold(Scalar::NEG_INFINITY, Scalar::max);
+            let mean = weights.iter().sum::<Scalar>() / weights.len() as Scalar;
+            text += &format!(
+                "  layer {}: {} → {}, {}, {} weights (min {min:.4}, max {max:.4}, mean {mean:.4}), {} biases\n",
+                index + 1,
+                layer.input_size(),
+                layer.output_size(),
+                layer.activation().name(),
+                weights.len(),
+                layer.biases().data().len(),
+            );
         }
-        let file: ModelFile = serde_json::from_str(text).map_err(invalid_file)?;
-        let layers = file
-            .layers
-            .into_iter()
-            .enumerate()
-            .map(|(index, layer)| {
-                layer
-                    .into_dense()
-                    .map_err(|error| format!("layer {}: {error}", index + 1))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let trainer = file.training.trainer()?;
-        Model::new(Network::new(layers)?, trainer, file.training.seed())
+        let optimizer = self.trainer.optimizer();
+        let settings: Vec<String> = optimizer
+            .settings()
+            .iter()
+            .map(|(name, value)| format!("{name} {value}"))
+            .collect();
+        text += &format!(
+            "training:\n  loss: {}\n  optimizer: {} ({})\n  batch size: {}\n  epochs: {}\n  seed: {}\n",
+            self.trainer.loss().name(),
+            optimizer.name(),
+            settings.join(", "),
+            self.trainer.batch_size(),
+            self.trainer.epochs(),
+            self.seed,
+        );
+        text += &match self.trainer.early_stopping() {
+            Some(early_stopping) => format!(
+                "  early stopping: validation share {}, patience {}\n",
+                early_stopping.validation(),
+                early_stopping.patience()
+            ),
+            None => "  early stopping: off\n".to_string(),
+        };
+        Ok(text)
     }
-}
-
-impl LayerFile {
-    fn from_dense(layer: &Dense) -> Result<LayerFile, String> {
-        check_finite(layer).map_err(|error| format!("{error}, so the network cannot be saved"))?;
-        let weights = layer.weights();
-        Ok(LayerFile {
-            activation: layer.activation().name().to_string(),
-            weights: (0..weights.rows())
-                .map(|row| weights.row(row).to_vec())
-                .collect(),
-            biases: layer.biases().data().to_vec(),
-        })
-    }
-
-    fn into_dense(self) -> Result<Dense, String> {
-        let activation = Activation::from_name(&self.activation)?;
-        let weights = Matrix::from_rows(&self.weights)?;
-        let biases = Matrix::from_rows(&[self.biases])?;
-        let layer = Dense::new(weights, biases, activation)?;
-        check_finite(&layer)?;
-        Ok(layer)
-    }
-}
-
-fn check_finite(layer: &Dense) -> Result<(), String> {
-    let mut parameters = layer.weights().data().iter().chain(layer.biases().data());
-    if parameters.any(|value| !value.is_finite()) {
-        return Err("a weight or bias is not a finite number".into());
-    }
-    Ok(())
 }
 
 fn temporary_path(path: &Path) -> PathBuf {
     let mut name = path.as_os_str().to_owned();
     name.push(".tmp");
     PathBuf::from(name)
-}
-
-fn invalid_file(error: serde_json::Error) -> String {
-    format!("invalid network file: {error}")
 }
 
 #[cfg(test)]
@@ -191,6 +159,7 @@ mod tests {
     use crate::early_stopping::EarlyStopping;
     use crate::initializations::XavierNormal;
     use crate::losses::{MeanSquaredError, SoftmaxCrossEntropy};
+    use crate::matrix::Matrix;
     use crate::optimizers::Sgd;
 
     fn network(output: Activation) -> Network {
@@ -217,8 +186,6 @@ mod tests {
         .unwrap()
     }
 
-    const SMALL: &str = r#"{"version":1,"layers":[{"activation":"identity","weights":[[0.5],[-1.0]],"biases":[0.25]}],"training":{"loss":"mean_squared_error","optimizer":{"name":"sgd","learning_rate":0.1},"batch_size":4,"epochs":10,"seed":7}}"#;
-
     fn small() -> Model {
         let layer = Dense::new(
             Matrix::from_rows(&[[0.5], [-1.0]]).unwrap(),
@@ -230,20 +197,44 @@ mod tests {
         Model::new(Network::new(vec![layer]).unwrap(), trainer, 7).unwrap()
     }
 
+    /// What `small()` must be saved as, written by hand.
+    fn small_bytes() -> Vec<u8> {
+        let mut bytes = b"MTNN".to_vec();
+        bytes.extend(1u32.to_le_bytes()); // version
+        bytes.extend(1u32.to_le_bytes()); // layers
+        bytes.extend(b"\x08identity");
+        bytes.extend(2u32.to_le_bytes()); // inputs
+        bytes.extend(1u32.to_le_bytes()); // neurons
+        for value in [0.5f32, -1.0, 0.25] {
+            bytes.extend(value.to_le_bytes());
+        }
+        bytes.extend(b"\x12mean_squared_error");
+        bytes.extend(b"\x03sgd");
+        bytes.extend(1u32.to_le_bytes()); // optimizer settings
+        bytes.extend(b"\x0dlearning_rate");
+        bytes.extend(0.1f32.to_le_bytes());
+        for value in [4u64, 10, 7] {
+            bytes.extend(value.to_le_bytes()); // batch size, epochs, seed
+        }
+        bytes.push(0); // no early stopping
+        bytes
+    }
+
     fn temporary(name: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!("my_torch_{name}_{}.nn", std::process::id()))
     }
 
     #[test]
-    fn writes_the_network_and_its_training_settings_as_json() {
-        assert_eq!(small().to_json(), Ok(SMALL.to_string()));
+    fn writes_the_network_and_its_training_settings_as_bytes() {
+        assert_eq!(small().to_bytes(), Ok(small_bytes()));
+        assert_eq!(small_bytes().len(), 111);
     }
 
     #[test]
     fn reading_back_gives_the_same_model() {
         let model = Model::new(network(Activation::Identity), trainer(), 3).unwrap();
-        let json = model.to_json().unwrap();
-        let loaded = Model::from_json(&json).unwrap();
+        let bytes = model.to_bytes().unwrap();
+        let loaded = Model::from_bytes(&bytes).unwrap();
         assert_eq!(loaded.network(), model.network());
         assert_eq!(loaded.seed(), 3);
         assert_eq!(loaded.trainer().loss().name(), "softmax_cross_entropy");
@@ -255,7 +246,7 @@ mod tests {
             (loaded.trainer().batch_size(), loaded.trainer().epochs()),
             (2, 5)
         );
-        assert_eq!(loaded.to_json(), Ok(json));
+        assert_eq!(loaded.to_bytes(), Ok(bytes));
     }
 
     #[test]
@@ -267,17 +258,10 @@ mod tests {
             3,
         )
         .unwrap();
-        let json = model.to_json().unwrap();
-        assert!(
-            json.ends_with(r#","seed":3,"early_stopping":{"validation":0.1,"patience":5}}}"#),
-            "{json}"
-        );
-        let loaded = Model::from_json(&json).unwrap();
+        let loaded = Model::from_bytes(&model.to_bytes().unwrap()).unwrap();
         assert_eq!(loaded.trainer().early_stopping(), Some(early_stopping));
-        assert_eq!(
-            Model::from_json(SMALL).unwrap().trainer().early_stopping(),
-            None
-        );
+        let plain = Model::from_bytes(&small_bytes()).unwrap();
+        assert_eq!(plain.trainer().early_stopping(), None);
     }
 
     #[test]
@@ -291,7 +275,7 @@ mod tests {
         .unwrap();
         let trainer = Trainer::new(MeanSquaredError, Sgd::new(0.1).unwrap(), 4, 10).unwrap();
         let model = Model::new(Network::new(vec![layer]).unwrap(), trainer, 7).unwrap();
-        let loaded = Model::from_json(&model.to_json().unwrap()).unwrap();
+        let loaded = Model::from_bytes(&model.to_bytes().unwrap()).unwrap();
         assert_eq!(loaded.network(), model.network());
     }
 
@@ -307,7 +291,7 @@ mod tests {
         let model = Model::new(Network::new(vec![layer]).unwrap(), trainer, 7).unwrap();
         let message =
             "layer 1: a weight or bias is not a finite number, so the network cannot be saved";
-        assert_eq!(model.to_json(), Err(message.to_string()));
+        assert_eq!(model.to_bytes(), Err(message.to_string()));
         let path = temporary("not_a_number");
         assert_eq!(model.save(&path), Err(message.to_string()));
         assert!(!path.exists());
@@ -315,126 +299,159 @@ mod tests {
 
     #[test]
     fn refuses_broken_files() {
-        let layer = r#"{"activation":"identity","weights":[[0.5],[-1.0]],"biases":[0.25]}"#;
-        let changed = |old: &str, new: &str| {
-            assert!(SMALL.contains(old), "{old}");
-            SMALL.replace(old, new)
+        let valid = small_bytes();
+        let replace = |base: &[u8], old: &[u8], new: &[u8]| {
+            let at = base
+                .windows(old.len())
+                .enumerate()
+                .filter(|(_, window)| *window == old)
+                .map(|(at, _)| at)
+                .collect::<Vec<_>>();
+            assert_eq!(at.len(), 1, "{old:?} must appear once");
+            [&base[..at[0]], new, &base[at[0] + old.len()..]].concat()
         };
-        let cases = [
+        let changed = |old: &[u8], new: &[u8]| replace(&valid, old, new);
+        let early_stopping = |validation: f32, patience: u64| {
+            let mut bytes = valid[..valid.len() - 1].to_vec();
+            bytes.push(1);
+            bytes.extend(validation.to_le_bytes());
+            bytes.extend(patience.to_le_bytes());
+            bytes
+        };
+        let batch_and_epochs = [4u64.to_le_bytes(), 10u64.to_le_bytes()].concat();
+        let sizes = [2u32.to_le_bytes(), 1u32.to_le_bytes()].concat();
+        let cases: Vec<(Vec<u8>, &str)> = vec![
             (
-                "not json".to_string(),
-                "invalid network file: expected ident at line 1 column 2",
+                b"{}".to_vec(),
+                "the file ends too early while reading the header (4 bytes needed, 2 left)",
             ),
             (
-                "{}".to_string(),
-                "invalid network file: missing field `version` at line 1 column 2",
+                b"not a network".to_vec(),
+                "not a network file (wrong header)",
             ),
             (
-                changed(r#""version":1"#, r#""version":2"#),
+                changed(b"MTNN\x01", b"MTNN\x02"),
                 "unsupported network file version 2, expected 1",
             ),
             (
-                changed(r#""identity""#, r#""softmax""#),
+                valid[..30].to_vec(),
+                "layer 1: the file ends too early while reading the weights (8 bytes needed, 1 left)",
+            ),
+            (
+                changed(
+                    &sizes,
+                    &[u32::MAX.to_le_bytes(), 1u32.to_le_bytes()].concat(),
+                ),
+                "layer 1: the file ends too early while reading the weights",
+            ),
+            (
+                changed(&sizes, &[2u32.to_le_bytes(), 0u32.to_le_bytes()].concat()),
+                "layer 1: a matrix cannot be 2 × 0",
+            ),
+            (
+                changed(b"\x08identity", b"\x07softmax"),
                 "layer 1: unknown activation \"softmax\", expected one of: identity, sigmoid, tanh, relu, leaky_relu",
             ),
             (
-                changed("[[0.5],[-1.0]]", "[[0.5],[-1.0,2.0]]"),
-                "layer 1: matrix row 2 has 2 values, expected 1",
-            ),
-            (
-                changed(r#""weights":[[0.5],[-1.0]]"#, r#""weights":[]"#),
-                "layer 1: a matrix cannot be 0 × 0",
-            ),
-            (
-                changed("[[0.5],[-1.0]]", "[[1e39],[-1.0]]"),
+                changed(&0.5f32.to_le_bytes(), &f32::NAN.to_le_bytes()),
                 "layer 1: a weight or bias is not a finite number",
             ),
             (
-                changed(r#""biases":[0.25]"#, r#""biases":[-1e39]"#),
+                changed(&0.25f32.to_le_bytes(), &f32::INFINITY.to_le_bytes()),
                 "layer 1: a weight or bias is not a finite number",
             ),
             (
-                changed(r#""biases":[0.25]"#, r#""biases":[0.25,1.0]"#),
-                "layer 1: a layer with 1 outputs needs 1 × 1 biases, got a 1 × 2 matrix",
-            ),
-            (changed(layer, ""), "a network needs at least one layer"),
-            (
-                changed(layer, &format!("{layer},{layer}")),
-                "layer 1 has 1 outputs but layer 2 expects 2 inputs",
-            ),
-            (
-                changed("mean_squared_error", "huber"),
+                changed(b"\x12mean_squared_error", b"\x05huber"),
                 "unknown loss \"huber\", expected one of: mean_squared_error, softmax_cross_entropy",
             ),
             (
-                changed(r#""name":"sgd""#, r#""name":"adam""#),
+                changed(b"\x03sgd", b"\x04adam"),
                 "unknown optimizer \"adam\", expected one of: sgd",
             ),
             (
-                changed(r#""learning_rate":0.1"#, r#""learnig_rate":0.1"#),
-                "the sgd optimizer has no setting called learnig_rate",
+                changed(b"\x0dlearning_rate", b"\x0dlearnin_grate"),
+                "the sgd optimizer has no setting called learnin_grate",
             ),
             (
-                changed(r#""learning_rate":0.1"#, r#""learning_rate":-1.0"#),
+                changed(&0.1f32.to_le_bytes(), &(-1.0f32).to_le_bytes()),
                 "the learning rate must be a positive number, got -1",
             ),
             (
-                changed(r#""batch_size":4"#, r#""batch_size":0"#),
+                changed(
+                    &batch_and_epochs,
+                    &[0u64.to_le_bytes(), 10u64.to_le_bytes()].concat(),
+                ),
                 "the batch size must be at least 1",
             ),
             (
-                changed("mean_squared_error", "softmax_cross_entropy")
-                    .replace("identity", "sigmoid"),
+                replace(
+                    &changed(b"\x08identity", b"\x07sigmoid"),
+                    b"\x12mean_squared_error",
+                    b"\x15softmax_cross_entropy",
+                ),
                 "this loss needs raw scores, so the output layer must be Identity, not Sigmoid",
             ),
             (
-                changed(r#""seed":7"#, r#""seed":7,"extra":1"#),
-                "invalid network file: unknown field `extra`",
+                [&valid[..valid.len() - 1], &[2u8][..]].concat(),
+                "invalid early stopping flag 2, expected 0 or 1",
             ),
             (
-                changed(r#""seed":7"#, r#""seed":-7"#),
-                "invalid network file: invalid value: integer `-7`",
-            ),
-            (
-                changed(
-                    r#""seed":7"#,
-                    r#""seed":7,"early_stopping":{"validation":1.5,"patience":5}"#,
-                ),
+                early_stopping(1.5, 5),
                 "the validation share must be greater than 0 and less than 1, got 1.5",
             ),
             (
-                changed(
-                    r#""seed":7"#,
-                    r#""seed":7,"early_stopping":{"validation":0.1,"patience":0}"#,
-                ),
+                early_stopping(0.1, 0),
                 "the patience must be at least 1 epoch",
             ),
             (
-                changed(
-                    r#""seed":7"#,
-                    r#""seed":7,"early_stopping":{"validation":0.1}"#,
-                ),
-                "invalid network file: missing field `patience`",
+                [&valid[..], &[0u8][..]].concat(),
+                "1 unexpected bytes after the end of the network",
+            ),
+            (
+                valid[..valid.len() - 1].to_vec(),
+                "the file ends too early while reading the early stopping flag",
             ),
         ];
-        for (text, expected) in cases {
-            let error = Model::from_json(&text).err().unwrap_or_default();
+        for (bytes, expected) in cases {
+            let error = Model::from_bytes(&bytes).err().unwrap_or_default();
             assert!(
                 error.starts_with(expected),
-                "{text}\n gave: {error}\n expected: {expected}"
+                "{bytes:?}\n gave: {error}\n expected: {expected}"
             );
         }
+    }
+
+    #[test]
+    fn refuses_layers_that_do_not_fit_together() {
+        let layer = |inputs, outputs| {
+            Dense::new(
+                Matrix::zeros(inputs, outputs),
+                Matrix::zeros(1, outputs),
+                Activation::Identity,
+            )
+            .unwrap()
+        };
+        let trainer = Trainer::new(MeanSquaredError, Sgd::new(0.1).unwrap(), 4, 10).unwrap();
+        let encode = |layers: &[Dense]| model_file::encode(layers, &trainer, 7).unwrap();
+        assert_eq!(
+            Model::from_bytes(&encode(&[layer(2, 1), layer(2, 1)])).err(),
+            Some("layer 1 has 1 outputs but layer 2 expects 2 inputs".to_string())
+        );
+        assert_eq!(
+            Model::from_bytes(&encode(&[])).err(),
+            Some("a network needs at least one layer".to_string())
+        );
     }
 
     #[test]
     fn saves_and_loads_through_a_file() {
         let path = temporary("round_trip");
         small().save(&path).unwrap();
-        let text = std::fs::read_to_string(&path).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
         let loaded = Model::load(&path);
         std::fs::remove_file(&path).unwrap();
-        assert_eq!(text, format!("{SMALL}\n"));
-        assert_eq!(loaded.unwrap().to_json(), Ok(SMALL.to_string()));
+        assert_eq!(bytes, small_bytes());
+        assert_eq!(loaded.unwrap().to_bytes(), Ok(small_bytes()));
     }
 
     #[test]
@@ -445,9 +462,9 @@ mod tests {
             .save(&path)
             .unwrap();
         small().save(&path).unwrap();
-        let text = std::fs::read_to_string(&path).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
         std::fs::remove_file(&path).unwrap();
-        assert_eq!(text, format!("{SMALL}\n"));
+        assert_eq!(bytes, small_bytes());
         assert!(!temporary_path(&path).exists());
     }
 
@@ -497,7 +514,7 @@ mod tests {
         assert_eq!(
             error,
             Some(format!(
-                "{}: invalid network file: missing field `version` at line 1 column 2",
+                "{}: invalid network file: the file ends too early while reading the header (4 bytes needed, 2 left)",
                 broken.display()
             ))
         );
@@ -507,6 +524,16 @@ mod tests {
             error.starts_with(&format!("cannot write {}: ", nowhere.display())),
             "{error}"
         );
+    }
+
+    #[test]
+    fn describes_the_model() {
+        let expected = "file: 111 bytes, format version 1\n\
+network: 2 → 1 (1 layers, 3 parameters)\n  \
+layer 1: 2 → 1, identity, 2 weights (min -1.0000, max 0.5000, mean -0.2500), 1 biases\n\
+training:\n  loss: mean_squared_error\n  optimizer: sgd (learning_rate 0.1)\n  batch size: 4\n  \
+epochs: 10\n  seed: 7\n  early stopping: off\n";
+        assert_eq!(small().describe(), Ok(expected.to_string()));
     }
 
     #[test]
