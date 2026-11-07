@@ -220,9 +220,10 @@ impl Reader<'_> {
             .and_then(|count| count.checked_mul(SCALAR_SIZE))
             .ok_or_else(|| format!("{what} are too many ({rows} × {cols})"))?;
         let bytes = self.take(count, what)?;
-        Ok(bytes
-            .chunks_exact(SCALAR_SIZE)
-            .map(|chunk| Scalar::from_le_bytes(chunk.try_into().unwrap()))
+        let (chunks, _) = bytes.as_chunks::<SCALAR_SIZE>();
+        Ok(chunks
+            .iter()
+            .map(|chunk| Scalar::from_le_bytes(*chunk))
             .collect())
     }
 }
