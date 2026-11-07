@@ -57,8 +57,8 @@ fn train_watched(
     dataset: &Dataset,
     samples: &[Sample],
 ) -> Result<Result<History, String>, String> {
-    let dashboard =
-        Dashboard::start(model.trainer().epochs()).map_err(|error| format!("error: {error}"))?;
+    let dashboard = Dashboard::start(model.trainer().epochs(), model.network())
+        .map_err(|error| format!("error: {error}"))?;
     eprintln!("dashboard: {}", dashboard.url());
     let trained = model.train_observed(dataset, |report| {
         let (point, confusion) = point(report, samples);
