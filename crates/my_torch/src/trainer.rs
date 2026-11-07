@@ -11,6 +11,9 @@ use crate::network::Network;
 use crate::optimizers::Optimizer;
 use crate::rng::Rng;
 
+/// Rows per thread when computing the gradients of a batch.
+const SHARD_ROWS: usize = 32;
+
 pub struct Trainer {
     loss: Box<dyn Loss>,
     optimizer: Box<dyn Optimizer>,
@@ -135,8 +138,12 @@ impl Trainer {
         let mut total = 0.0;
         for indices in order.chunks(self.batch_size) {
             let batch = data.select(indices);
-            let (value, gradients) =
-                network.gradients(batch.inputs(), batch.targets(), self.loss.as_ref())?;
+            let (value, gradients) = network.gradients_sharded(
+                batch.inputs(),
+                batch.targets(),
+                self.loss.as_ref(),
+                SHARD_ROWS,
+            )?;
             self.optimizer.step(network, &gradients);
             total += value * indices.len() as Scalar;
         }
