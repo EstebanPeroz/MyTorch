@@ -37,7 +37,8 @@ read the castling rights, the en passant square or the counters (see [labels.md]
 
 Duplicates are removed first (as always), then the mirrors are added. A mirror is skipped when the same
 chessboard is already in the file, so there are still no duplicates. The `training on N chessboards` line counts
-the file; a second line, `training on M more chessboards, the mirror of each one`, counts the mirrors.
+the file; a second line, `training on M chessboards in total, with K mirrors added`, gives the total the network
+is trained on.
 
 ## Validation
 
