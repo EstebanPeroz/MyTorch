@@ -22,6 +22,14 @@ impl Sample {
         self.label
     }
 
+    /// The same chessboard seen from the other side, with the label of that side. See `Board::mirrored`.
+    pub fn mirrored(&self) -> Sample {
+        Sample {
+            board: self.board.mirrored(),
+            label: self.label.map(Label::mirrored),
+        }
+    }
+
     fn is_counter(word: &str) -> bool {
         !word.is_empty() && word.bytes().all(|byte| byte.is_ascii_digit())
     }
@@ -86,6 +94,15 @@ mod tests {
             parse(&format!("{START} Checkmate Black")).unwrap().label(),
             Some(Label::Checkmate(Color::Black))
         );
+    }
+
+    #[test]
+    fn a_mirrored_sample_has_the_mirrored_board_and_label() {
+        let sample = parse(&format!("{START} Checkmate Black")).unwrap();
+        let mirrored = sample.mirrored();
+        assert_eq!(mirrored.board(), &sample.board().mirrored());
+        assert_eq!(mirrored.label(), Some(Label::Checkmate(Color::White)));
+        assert_eq!(parse(START).unwrap().mirrored().label(), None);
     }
 
     #[test]

@@ -68,6 +68,10 @@ To follow a training live (loss and accuracy per epoch) in a browser, add `--das
 a `dashboard: http://127.0.0.1:PORT` line on stderr. It is an optional extra and is not part of the help text, see
 [docs/dashboard.md](docs/dashboard.md).
 
+To train on every chessboard and on its mirror too (the same position seen from the other side, with the label
+of that side), add `--mirror` to `--train`. It is another optional extra, not part of the help text, see
+[docs/mirror.md](docs/mirror.md).
+
 Each line of a CHESSFILE is a FEN followed, optionally, by its expected output:
 
 ```

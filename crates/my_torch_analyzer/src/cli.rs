@@ -5,7 +5,11 @@ use cli_core::Cli;
 
 pub enum Mode {
     Predict,
-    Train { save_file: PathBuf, dashboard: bool },
+    Train {
+        save_file: PathBuf,
+        dashboard: bool,
+        mirror: bool,
+    },
 }
 
 pub struct Args {
@@ -53,6 +57,13 @@ impl Cli for Args {
                     .action(ArgAction::SetTrue)
                     .conflicts_with("predict"),
             )
+            // Also an extra: trains on every chessboard and on its mirror (the other side's point of view).
+            .arg(
+                Arg::new("mirror")
+                    .long("mirror")
+                    .action(ArgAction::SetTrue)
+                    .conflicts_with("predict"),
+            )
             .group(
                 ArgGroup::new("mode")
                     .args(["predict", "train"])
@@ -80,6 +91,7 @@ impl Cli for Args {
                     .cloned()
                     .unwrap_or_else(|| load_file.clone()),
                 dashboard: matches.get_flag("dashboard"),
+                mirror: matches.get_flag("mirror"),
             }
         } else {
             Mode::Predict
@@ -128,6 +140,21 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(train_save_file(&args), Some(Path::new("out.nn")));
+    }
+
+    #[test]
+    fn mirroring_is_optional_and_only_for_training() {
+        let mirror = |args: &Args| matches!(args.mode(), Mode::Train { mirror: true, .. });
+        let plain = parse(&["--train", "net.nn", "boards.txt"])
+            .unwrap()
+            .unwrap();
+        assert!(!mirror(&plain));
+        let mirrored = parse(&["--mirror", "--train", "net.nn", "boards.txt"])
+            .unwrap()
+            .unwrap();
+        assert!(mirror(&mirrored));
+        assert!(parse(&["--predict", "--mirror", "net.nn", "boards.txt"]).is_err());
+        assert!(parse(&["--mirror", "net.nn", "boards.txt"]).is_err());
     }
 
     #[test]

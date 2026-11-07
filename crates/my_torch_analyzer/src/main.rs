@@ -4,6 +4,7 @@ mod modes;
 use std::process::ExitCode;
 
 use cli::{Args, Mode};
+use modes::Options;
 
 fn main() -> ExitCode {
     cli_core::run(|args: Args| match args.mode() {
@@ -11,6 +12,15 @@ fn main() -> ExitCode {
         Mode::Train {
             save_file,
             dashboard,
-        } => modes::train(args.load_file(), args.chess_file(), save_file, *dashboard),
+            mirror,
+        } => modes::train(
+            args.load_file(),
+            args.chess_file(),
+            save_file,
+            Options {
+                dashboard: *dashboard,
+                mirror: *mirror,
+            },
+        ),
     })
 }

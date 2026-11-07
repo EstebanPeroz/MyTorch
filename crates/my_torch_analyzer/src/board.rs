@@ -60,6 +60,21 @@ impl Board {
         self.side_to_move
     }
 
+    /// The same position seen from the other side: ranks are flipped, every piece changes color and the other
+    /// side is to move. It is a legal position whose checks and checkmates belong to the other color.
+    pub fn mirrored(&self) -> Board {
+        let mut squares = [None; Board::SQUARES];
+        for (square, piece) in self.squares.iter().enumerate() {
+            let (file, rank) = (square % Board::SIZE, square / Board::SIZE);
+            squares[Board::square_index(file, Board::SIZE - 1 - rank)] =
+                piece.map(|piece| Piece::new(piece.kind(), piece.color().opposite()));
+        }
+        Board {
+            squares,
+            side_to_move: self.side_to_move.opposite(),
+        }
+    }
+
     fn from_record(record: &FenRecord) -> Self {
         let mut squares = [None; Board::SQUARES];
         for (row, rank) in record.board.iter().enumerate() {
@@ -159,6 +174,25 @@ mod tests {
         );
         assert_eq!(piece_at(&board, "d8"), None);
         assert_eq!(board.side_to_move(), Color::White);
+    }
+
+    #[test]
+    fn mirroring_flips_the_ranks_swaps_the_colors_and_the_side_to_move() {
+        let board = Board::from_fen(FOOLS_MATE).unwrap();
+        let mirrored = board.mirrored();
+        assert_eq!(
+            piece_at(&mirrored, "h5"),
+            Some(Piece::new(PieceKind::Queen, Color::White))
+        );
+        assert_eq!(
+            piece_at(&mirrored, "e1"),
+            Some(Piece::new(PieceKind::King, Color::White))
+        );
+        assert_eq!(mirrored.side_to_move(), Color::Black);
+        // The start position is its own mirror, and mirroring twice gives the board back.
+        let start = Board::from_fen(START).unwrap();
+        assert_eq!(start.mirrored().squares(), start.squares());
+        assert_eq!(board.mirrored().mirrored(), board);
     }
 
     #[test]

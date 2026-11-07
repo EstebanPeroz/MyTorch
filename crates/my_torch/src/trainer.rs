@@ -87,7 +87,10 @@ impl Trainer {
     ) -> Result<History, String> {
         self.check_output_layer(network)?;
         let (mut order, validation_rows) = match self.early_stopping {
-            Some(early_stopping) => early_stopping.split(data.sample_count(), rng)?,
+            Some(early_stopping) => match data.groups() {
+                Some(groups) => early_stopping.split_groups(groups, rng)?,
+                None => early_stopping.split(data.sample_count(), rng)?,
+            },
             None => ((0..data.sample_count()).collect(), Vec::new()),
         };
         let validation = self.early_stopping.map(|_| data.select(&validation_rows));
@@ -378,6 +381,34 @@ mod tests {
             assert_eq!(training, history.training()[index]);
             assert_eq!(validation, Some(history.validation()[index]));
         }
+    }
+
+    #[test]
+    fn grouped_samples_are_never_split_between_training_and_validation() {
+        // 20 samples in 10 groups: sample `row` is in group `row / 2`.
+        let groups: Vec<usize> = (0..20).map(|row| row / 2).collect();
+        let data = noise(20, 8).with_groups(groups.clone()).unwrap();
+        let mut network = wide_network();
+        let mut calls = 0;
+        trainer(SoftmaxCrossEntropy, 4, 3)
+            .with_early_stopping(EarlyStopping::new(0.25, 5).unwrap())
+            .fit_observed(&mut network, &data, &mut Rng::new(9), |report| {
+                calls += 1;
+                let validation: Vec<usize> = report
+                    .validation_samples()
+                    .iter()
+                    .map(|&row| groups[row])
+                    .collect();
+                assert!(validation.len() >= 5);
+                assert!(
+                    report
+                        .training_samples()
+                        .iter()
+                        .all(|&row| !validation.contains(&groups[row]))
+                );
+            })
+            .unwrap();
+        assert_eq!(calls, 3);
     }
 
     #[test]
