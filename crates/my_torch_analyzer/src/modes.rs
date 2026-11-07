@@ -1,7 +1,8 @@
 use std::path::Path;
 
-use my_torch::{History, Model};
+use my_torch::{Dataset, EpochReport, History, Model, Scalar};
 use my_torch_analyzer::chess_file::{ChessFile, Labels};
+use my_torch_analyzer::dashboard::{Dashboard, Point};
 use my_torch_analyzer::encoding;
 use my_torch_analyzer::sample::Sample;
 
@@ -15,7 +16,12 @@ pub fn predict(load_file: &Path, chess_file: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub fn train(load_file: &Path, chess_file: &Path, save_file: &Path) -> Result<(), String> {
+pub fn train(
+    load_file: &Path,
+    chess_file: &Path,
+    save_file: &Path,
+    dashboard: bool,
+) -> Result<(), String> {
     let file = ChessFile::read(chess_file, Labels::Required)?;
     let mut model = load(load_file)?;
     let conflicts = encoding::conflicts(file.samples());
@@ -30,14 +36,48 @@ pub fn train(load_file: &Path, chess_file: &Path, save_file: &Path) -> Result<()
         samples.len(),
         file.samples().len() - samples.len()
     );
-    let history = model
-        .train(&encoding::dataset(&samples)?)
-        .map_err(|error| format!("error: {error}"))?;
+    let dataset = encoding::dataset(&samples)?;
+    let history = if dashboard {
+        train_watched(&mut model, &dataset, &samples)?
+    } else {
+        model.train(&dataset)
+    }
+    .map_err(|error| format!("error: {error}"))?;
     report(&history);
     println!("accuracy: {:.2}%", accuracy(&model, &samples)? * 100.0);
     model
         .save(save_file)
         .map_err(|error| format!("error: {error}"))
+}
+
+/// Trains while serving the live dashboard, which tells the page how the training ended.
+fn train_watched(
+    model: &mut Model,
+    dataset: &Dataset,
+    samples: &[Sample],
+) -> Result<Result<History, String>, String> {
+    let dashboard =
+        Dashboard::start(model.trainer().epochs()).map_err(|error| format!("error: {error}"))?;
+    eprintln!("dashboard: {}", dashboard.url());
+    let trained = model.train_observed(dataset, |report| {
+        dashboard.record(point(report, samples));
+    });
+    dashboard.finish(trained.as_ref().map(|_| ()).map_err(String::as_str));
+    Ok(trained)
+}
+
+fn point(report: &EpochReport, samples: &[Sample]) -> Point {
+    let accuracy =
+        |rows: &[usize]| encoding::accuracy(report.network(), samples, rows).unwrap_or(Scalar::NAN);
+    Point {
+        epoch: report.epoch(),
+        training_loss: report.training_loss(),
+        validation_loss: report.validation_loss(),
+        training_accuracy: accuracy(report.training_samples()),
+        validation_accuracy: report
+            .validation_loss()
+            .map(|_| accuracy(report.validation_samples())),
+    }
 }
 
 fn load(path: &Path) -> Result<Model, String> {

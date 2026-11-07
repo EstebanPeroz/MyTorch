@@ -256,6 +256,7 @@ dependencies = [
  "cli_core",
  "cli_test",
  "my_torch",
+ "serde_json",
 ]
 
 [[package]]
