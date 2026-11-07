@@ -412,6 +412,25 @@ let trainer = Trainer::new(SoftmaxCrossEntropy, Sgd::new(0.01)?, 64, 1000)?
 early stopping, nothing changes: every sample is trained on, for exactly `epochs` epochs. Keras offers the same
 with `validation_split` and the `EarlyStopping(patience=…, restore_best_weights=True)` callback.
 
+### Watching a training
+
+`fit` returns its `History` only at the end. To follow a training while it runs, call
+`trainer.fit_observed(&mut network, &dataset, &mut rng, |report| …)` instead (`model.train_observed(&dataset, …)`
+for a `Model`). The closure runs at the end of every epoch, after the validation loss is measured and before
+early stopping decides to continue, with an `EpochReport`:
+
+| Method | Result |
+|---|---|
+| `epoch()`, `epochs()` | the number of this epoch (from 1), and the most epochs the training may run |
+| `training_loss()`, `validation_loss()` | the losses of this epoch; the second is `None` without early stopping |
+| `network()` | the network as it is after this epoch |
+| `training_samples()`, `validation_samples()` | the rows of the dataset used to train and held out; the second is empty without early stopping |
+
+The report hands over the network and the row indices rather than a metric, so the library stays ignorant of the
+problem: the caller computes what it needs (an accuracy, for example) on its own samples. The observer only
+reads, so a training with an observer gives exactly the same network and `History` as `fit`. A metric costs
+time only when an observer computes it.
+
 ## Model
 
 A `Model` is a network together with everything needed to train it: a `Trainer` (loss, optimizer, batch size,
@@ -423,6 +442,7 @@ again needs nothing but its file. Keras keeps the loss and the optimizer with th
 | `Model::new(network, trainer, seed)` | a model; refuses a loss that needs raw scores on a last layer that is not `Identity` |
 | `network()`, `trainer()`, `seed()` | reading the model; `trainer().loss()` and `trainer().optimizer()` give the loss and the optimizer |
 | `train(&dataset)` | `trainer.fit` on the model's network, shuffled with `Rng::new(seed)`; returns its `History` |
+| `train_observed(&dataset, observer)` | the same, calling `observer` after each epoch (see [Watching a training](#watching-a-training)) |
 | `save(path)`, `Model::load(path)` | writing and reading a network file (see [Network files](#network-files)) |
 | `to_json()`, `Model::from_json(&text)` | the same, as a string |
 
