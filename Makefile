@@ -17,7 +17,7 @@ train: all
 	test -f $(DATASET) || { echo "error: $(DATASET) not found, see docs/dataset.md" >&2; exit 84; }
 	rm -rf .train && mkdir .train
 	cd .train && ../my_torch_generator ../$(CONFIG) 1
-	./my_torch_analyzer --train --mirror --save $(NETWORK) .train/$(basename $(notdir $(CONFIG)))_1.nn $(DATASET)
+	./my_torch_analyzer --train --mirror --dashboard --save $(NETWORK) .train/$(basename $(notdir $(CONFIG)))_1.nn $(DATASET)
 	rm -rf .train
 
 clean:

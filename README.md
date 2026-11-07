@@ -30,7 +30,7 @@ make
 | Target | Effect |
 |---|---|
 | `make` | builds `my_torch_analyzer` and `my_torch_generator` in release mode and copies them to the repo root |
-| `make train` | generates a blank network from `CONFIG` (default `configs/chess.conf`) and trains it on `DATASET` (default `dataset/full.txt`, see [docs/dataset.md](docs/dataset.md)) with `--mirror`, then saves it as `NETWORK` (default `my_torch_network.nn`) |
+| `make train` | generates a blank network from `CONFIG` (default `configs/chess.conf`) and trains it on `DATASET` (default `dataset/full.txt`, see [docs/dataset.md](docs/dataset.md)) with `--mirror` and `--dashboard`, then saves it as `NETWORK` (default `my_torch_network.nn`) |
 | `make clean` | removes the build directory (`target/`) |
 | `make fclean` | `clean`, then removes both binaries |
 | `make re` | `fclean`, then `make` |
