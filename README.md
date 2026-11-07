@@ -11,7 +11,7 @@ A chessboard is given to the network as 769 inputs (12 piece planes of 64 square
 network has 6 outputs, one per label. `configs/chess.conf` is the configuration of the network to train:
 `./my_torch_generator configs/chess.conf 1` creates `chess_1.nn`, then
 `./my_torch_analyzer --train --save my_torch_network.nn chess_1.nn dataset/full.txt` trains it (`make train` does
-both steps, with `--mirror`). Duplicate chessboards
+both steps, with `--mirror` and `--dashboard`). Duplicate chessboards
 are removed before training, and a prediction can never name the side to move as the attacker.
 
 ## Requirements
@@ -30,7 +30,7 @@ make
 | Target | Effect |
 |---|---|
 | `make` | builds `my_torch_analyzer` and `my_torch_generator` in release mode and copies them to the repo root |
-| `make train` | generates a blank network from `CONFIG` (default `configs/chess.conf`) and trains it on `DATASET` (default `dataset/full.txt`, see [docs/dataset.md](docs/dataset.md)) with `--mirror`, then saves it as `NETWORK` (default `my_torch_network.nn`) |
+| `make train` | generates a blank network from `CONFIG` (default `configs/chess.conf`) and trains it on `DATASET` (default `dataset/full.txt`, see [docs/dataset.md](docs/dataset.md)) with `--mirror` and `--dashboard`, then saves it as `NETWORK` (default `my_torch_network.nn`) |
 | `make clean` | removes the build directory (`target/`) |
 | `make fclean` | `clean`, then removes both binaries |
 | `make re` | `fclean`, then `make` |
@@ -119,8 +119,8 @@ training settings. See [docs/my_torch.md](docs/my_torch.md#configurations).
   ],
   "training": {
     "loss": "softmax_cross_entropy",
-    "optimizer": { "name": "sgd", "learning_rate": 0.01 },
-    "batch_size": 64,
+    "optimizer": { "name": "sgd", "learning_rate": 0.1 },
+    "batch_size": 512,
     "epochs": 100,
     "seed": 42,
     "early_stopping": { "validation": 0.1, "patience": 5 }

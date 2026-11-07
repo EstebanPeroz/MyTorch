@@ -52,7 +52,7 @@ These are hypotheses to test one at a time, not measured results.
 1. **Check the data first**: label distribution, label noise, size of the deduplicated dataset. It is often the
    biggest lever.
 2. **Handle the imbalance** with a class-weighted loss or by oversampling the rare labels.
-3. **Optimizer**: plain SGD at a learning rate of 0.01 is slow. Momentum or Adam usually helps, as does a decaying
+3. **Optimizer**: plain SGD at a small learning rate is slow. Momentum or Adam usually helps, as does a decaying
    learning rate.
 4. **Capacity**: 769 inputs into 128 then 64 neurons is small for chess. Try wider or deeper networks, once the
    validation gap is visible.
