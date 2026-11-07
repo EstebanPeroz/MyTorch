@@ -2,7 +2,7 @@ use chess_fen_parser::{FenError, FenRecord};
 
 use crate::color::Color;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PieceKind {
     Pawn,
     Knight,
@@ -12,13 +12,13 @@ pub enum PieceKind {
     King,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Piece {
     kind: PieceKind,
     color: Color,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Board {
     squares: [Option<Piece>; Board::SQUARES],
     side_to_move: Color,
