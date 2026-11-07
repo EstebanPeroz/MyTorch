@@ -17,6 +17,18 @@ pub fn predict(load_file: &Path, chess_file: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Prints what a network file holds. It is not tied to chess, so the network's shape is not checked.
+pub fn dump(load_file: &Path) -> Result<(), String> {
+    let model = Model::load(load_file).map_err(|error| format!("error: {error}"))?;
+    print!(
+        "{}",
+        model
+            .describe()
+            .map_err(|error| format!("error: {error}"))?
+    );
+    Ok(())
+}
+
 /// The optional extras of a training, none of which is in the help text.
 #[derive(Debug, Clone, Copy)]
 pub struct Options {

@@ -84,6 +84,25 @@ Like `--dashboard`, it is optional, only works with `--train` and is absent from
 | Only with `--train` | `--predict --mirror a.nn boards.txt`, `--mirror a.nn boards.txt` | error |
 | Without it, nothing changes | `--train a.nn boards.txt` | same output and same saved network |
 
+### `--dump` (not in the help text)
+
+`--dump` prints what a network file holds instead of using it. Network files are binary, so this is how to read
+one: the size of the file, each layer (shape, activation, and the range of its weights) and the training
+settings. It is a third mode, so it excludes `--predict` and `--train`, and takes no CHESSFILE. Like the other
+extras, it is absent from `help.txt`.
+
+```sh
+./my_torch_analyzer --dump my_torch_network.nn
+```
+
+| Rule | Example | Result |
+|---|---|---|
+| Takes only a network file | `--dump a.nn` | accepted |
+| No CHESSFILE, no other mode or option | `--dump a.nn boards.txt`, `--dump --predict a.nn`, `--dump --save b.nn a.nn` | error |
+| An unreadable file is an error | `--dump missing.nn` | `error: cannot read missing.nn: …`, exit code 84 |
+
+The network is not checked against the chess encoding, so any network file can be dumped.
+
 The parser resolves the save file itself, so the program receives `Mode::Train { save_file, .. }` with a path
 that is always set.
 

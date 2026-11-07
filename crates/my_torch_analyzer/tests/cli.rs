@@ -114,6 +114,41 @@ fn path(path: &Path) -> &str {
 }
 
 #[test]
+fn dump_prints_what_the_network_file_holds() {
+    let network = tiny_network("dump.nn");
+    let outcome = analyzer().run(&["--dump", path(&network)]);
+    let size = fs::metadata(&network).unwrap().len();
+    assert_eq!(outcome.code(), Some(0), "{outcome}");
+    let stdout = outcome.stdout();
+    assert!(
+        stdout.starts_with(&format!(
+            "file: {size} bytes, format version 1\nnetwork: 769 → "
+        )),
+        "{outcome}"
+    );
+    for expected in [
+        "  layer 1: 769 → ",
+        "training:\n",
+        "  loss: ",
+        "  seed: 1\n",
+    ] {
+        assert!(stdout.contains(expected), "{expected:?} missing: {outcome}");
+    }
+}
+
+#[test]
+fn dump_reports_unreadable_files_with_84() {
+    let garbage = temporary("dump_garbage.nn");
+    fs::write(&garbage, "not a network").unwrap();
+    analyzer()
+        .run(&["--dump", "tests/fixtures/missing.nn"])
+        .assert_error("cannot read tests/fixtures/missing.nn");
+    analyzer()
+        .run(&["--dump", path(&garbage)])
+        .assert_error(&format!("{}: invalid network file", garbage.display()));
+}
+
+#[test]
 fn predict_prints_one_label_per_chessboard_in_order() {
     let network = tiny_network("predict.nn");
     for chess_file in [LABELED, UNLABELED] {
@@ -158,12 +193,12 @@ fn predict_never_gives_the_color_of_the_side_to_move() {
 #[test]
 fn train_saves_into_the_load_file_by_default() {
     let network = tiny_network("train.nn");
-    let before = fs::read_to_string(&network).unwrap();
+    let before = fs::read(&network).unwrap();
     let outcome = analyzer().run(&["--train", path(&network), LABELED]);
     assert_eq!(outcome.code(), Some(0), "{outcome}");
     assert!(outcome.stdout().contains("epoch 3: loss"), "{outcome}");
     assert!(outcome.stdout().contains("accuracy: "), "{outcome}");
-    assert_ne!(fs::read_to_string(&network).unwrap(), before);
+    assert_ne!(fs::read(&network).unwrap(), before);
     assert!(Model::load(&network).is_ok());
 }
 
@@ -171,11 +206,11 @@ fn train_saves_into_the_load_file_by_default() {
 fn train_with_save_leaves_the_load_file_untouched() {
     let network = tiny_network("source.nn");
     let saved = temporary("saved.nn");
-    let before = fs::read_to_string(&network).unwrap();
+    let before = fs::read(&network).unwrap();
     let outcome = analyzer().run(&["--train", "--save", path(&saved), path(&network), LABELED]);
     assert_eq!(outcome.code(), Some(0), "{outcome}");
-    assert_eq!(fs::read_to_string(&network).unwrap(), before);
-    assert_ne!(fs::read_to_string(&saved).unwrap(), before);
+    assert_eq!(fs::read(&network).unwrap(), before);
+    assert_ne!(fs::read(&saved).unwrap(), before);
 }
 
 #[test]
@@ -198,10 +233,7 @@ fn mirroring_trains_on_the_mirror_of_every_chessboard_and_nothing_else_changes()
     );
     assert!(outcome.stdout().contains("accuracy: "), "{outcome}");
     assert!(Model::load(&mirrored).is_ok());
-    assert_ne!(
-        fs::read_to_string(&mirrored).unwrap(),
-        fs::read_to_string(&plain).unwrap()
-    );
+    assert_ne!(fs::read(&mirrored).unwrap(), fs::read(&plain).unwrap());
 }
 
 #[test]
@@ -357,8 +389,5 @@ fn the_dashboard_shows_the_training_live_and_changes_nothing_else() {
         .and_then(|count| count.parse().ok())
         .expect(&stdout);
     assert_eq!(counted, trained_on);
-    assert_eq!(
-        fs::read_to_string(&watched).unwrap(),
-        fs::read_to_string(&plain).unwrap()
-    );
+    assert_eq!(fs::read(&watched).unwrap(), fs::read(&plain).unwrap());
 }
