@@ -4,6 +4,7 @@ use my_torch::{Dataset, Matrix, Network, Scalar};
 
 use crate::board::{Board, PieceKind};
 use crate::color::Color;
+use crate::confusion::Confusion;
 use crate::label::Label;
 use crate::sample::Sample;
 
@@ -136,26 +137,29 @@ pub fn predict(network: &Network, samples: &[Sample]) -> Result<Vec<Label>, Stri
     Ok(labels)
 }
 
-/// The share of the labeled `samples` at `rows` that the network labels correctly, between 0 and 1. A
-/// sample without a label never counts as correct. Returns 0 for no rows.
-pub fn accuracy(network: &Network, samples: &[Sample], rows: &[usize]) -> Result<Scalar, String> {
+/// How the network labels the `samples` at `rows`, against their expected labels. A sample without a
+/// label is skipped.
+pub fn confusion(
+    network: &Network,
+    samples: &[Sample],
+    rows: &[usize],
+) -> Result<Confusion, String> {
+    let mut confusion = Confusion::default();
     if rows.is_empty() {
-        return Ok(0.0);
+        return Ok(confusion);
     }
     check_shape(network)?;
-    let mut correct = 0;
     for chunk in rows.chunks(PREDICTION_BATCH) {
         let chosen = || chunk.iter().map(|&row| &samples[row]);
         let scores = network.predict(&encode_all(chunk.len(), chosen()))?;
         check_finite(&scores)?;
-        correct += chosen()
-            .enumerate()
-            .filter(|(row, sample)| {
-                Some(classify(scores.row(*row), sample.board())) == sample.label()
-            })
-            .count();
+        for (row, sample) in chosen().enumerate() {
+            if let Some(expected) = sample.label() {
+                confusion.record(expected, classify(scores.row(row), sample.board()));
+            }
+        }
     }
-    Ok(correct as Scalar / rows.len() as Scalar)
+    Ok(confusion)
 }
 
 #[cfg(test)]
@@ -261,7 +265,7 @@ mod tests {
     }
 
     #[test]
-    fn accuracy_counts_the_correct_labels_among_the_chosen_rows() {
+    fn the_confusion_covers_the_chosen_labeled_rows() {
         use my_torch::{Activation, Dense};
         let samples: Vec<Sample> = [
             format!("{START} Nothing"),
@@ -276,10 +280,23 @@ mod tests {
         bias.set(0, Label::Nothing.index(), 1.0);
         let layer = Dense::new(Matrix::zeros(INPUTS, OUTPUTS), bias, Activation::Identity).unwrap();
         let network = Network::new(vec![layer]).unwrap();
-        assert_eq!(accuracy(&network, &samples, &[]), Ok(0.0));
-        assert_eq!(accuracy(&network, &samples, &[0]), Ok(1.0));
-        assert_eq!(accuracy(&network, &samples, &[1]), Ok(0.0));
-        assert_eq!(accuracy(&network, &samples, &[2]), Ok(0.0));
-        assert_eq!(accuracy(&network, &samples, &[0, 1]), Ok(0.5));
+        assert_eq!(confusion(&network, &samples, &[]), Ok(Confusion::default()));
+        let first = confusion(&network, &samples, &[0]).unwrap();
+        assert_eq!(first.count(Label::Nothing, Label::Nothing), 1);
+        assert_eq!(first.accuracy(), 1.0);
+        let second = confusion(&network, &samples, &[1]).unwrap();
+        assert_eq!(
+            second.count(Label::Checkmate(Color::Black), Label::Nothing),
+            1
+        );
+        assert_eq!(second.accuracy(), 0.0);
+        // A sample without a label is skipped.
+        assert_eq!(confusion(&network, &samples, &[2]).unwrap().total(), 0);
+        assert_eq!(
+            confusion(&network, &samples, &[0, 1, 2])
+                .unwrap()
+                .accuracy(),
+            0.5
+        );
     }
 }

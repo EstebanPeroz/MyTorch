@@ -63,6 +63,16 @@ h1 { font-size: 20px; margin: 0; }
   padding: 6px 10px; font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums;
 }
 .tooltip b { display: block; margin-bottom: 2px; }
+.matrix-card { margin-top: 16px; }
+.matrix-card .note { color: var(--text-2); font-size: 13px; margin: 0 0 8px; }
+.scroll { overflow-x: auto; }
+.matrix { width: auto; margin-top: 4px; }
+.matrix th, .matrix td { text-align: center; padding: 6px 10px; min-width: 64px; }
+.matrix th.row { text-align: right; white-space: nowrap; color: var(--text); font-weight: 500; }
+.matrix td { border: 2px solid var(--card); border-radius: 4px; }
+.matrix .axis-title { color: var(--text-2); font-size: 12px; }
+.classes { margin-top: 12px; }
+.classes th:first-child, .classes td:first-child { text-align: left; }
 details { margin-top: 16px; }
 summary { cursor: pointer; color: var(--text-2); }
 table { border-collapse: collapse; width: 100%; margin-top: 8px; font-variant-numeric: tabular-nums; }
@@ -84,6 +94,8 @@ th { color: var(--text-2); font-weight: 500; font-size: 13px; }
     <div class="tile"><div class="label">Training accuracy</div><div class="value" id="t-acc">–</div></div>
     <div class="tile"><div class="label">Validation accuracy</div><div class="value" id="t-vacc">–</div></div>
     <div class="tile"><div class="label">Best epoch</div><div class="value" id="t-best">–</div></div>
+    <div class="tile"><div class="label">Macro F1</div><div class="value" id="t-f1">–</div></div>
+    <div class="tile"><div class="label">Majority baseline</div><div class="value" id="t-base">–</div></div>
   </div>
 
   <div class="charts">
@@ -105,6 +117,13 @@ th { color: var(--text-2); font-weight: 500; font-size: 13px; }
     </section>
   </div>
 
+  <section class="card matrix-card" id="matrix-card" hidden>
+    <h2 id="matrix-title">Confusion matrix</h2>
+    <p class="note">Each row is an expected label. Cell shading is the share of that row, so the diagonal is the recall of each label. The baseline is the accuracy of always predicting the most frequent label: the network has to beat it.</p>
+    <div class="scroll"><table class="matrix" id="matrix"></table></div>
+    <div class="scroll"><table class="classes" id="classes"></table></div>
+  </section>
+
   <details id="table-view">
     <summary>Show the values as a table</summary>
     <table>
@@ -124,7 +143,7 @@ const percent = (v) => (v == null ? "–" : (v * 100).toFixed(2) + "%");
 const axisLoss = (v) => v.toFixed(2);
 const axisPercent = (v) => (v * 100).toFixed(1) + "%";
 
-let data = { epochs: 0, status: "running", message: "", points: [] };
+let data = { epochs: 0, status: "running", message: "", points: [], confusion: null };
 let stopped = false; // the server no longer answers
 let hover = null; // index of the hovered point
 
@@ -249,6 +268,56 @@ function statusText() {
   return n === 0 ? "Waiting for the first epoch…" : `● Training, epoch ${n} of at most ${data.epochs}`;
 }
 
+function scores(counts) {
+  const n = counts.length;
+  const rows = counts.map((row, i) => {
+    const support = row.reduce((a, b) => a + b, 0);
+    const predicted = counts.reduce((a, r) => a + r[i], 0);
+    const hit = counts[i][i];
+    const precision = predicted > 0 ? hit / predicted : null;
+    const recall = support > 0 ? hit / support : null;
+    const f1 = precision !== null && recall !== null && precision + recall > 0
+      ? (2 * precision * recall) / (precision + recall) : 0;
+    return { support, predicted, precision, recall, f1 };
+  });
+  const present = rows.filter((r) => r.support > 0);
+  const total = rows.reduce((a, r) => a + r.support, 0);
+  const macro = present.length ? present.reduce((a, r) => a + r.f1, 0) / present.length : null;
+  const baseline = total > 0 ? Math.max(...rows.map((r) => r.support)) / total : null;
+  return { rows, macro, baseline, n };
+}
+
+function renderConfusion() {
+  const card = $("matrix-card");
+  const c = data.confusion;
+  if (!c) { card.hidden = true; $("t-f1").textContent = "–"; $("t-base").textContent = "–"; return; }
+  card.hidden = false;
+  const epoch = data.points.length ? data.points[data.points.length - 1].epoch : 0;
+  $("matrix-title").textContent = `Confusion matrix on the ${c.on} samples, after epoch ${epoch}`;
+  const { rows, macro, baseline } = scores(c.counts);
+  $("t-f1").textContent = percent(macro);
+  $("t-base").textContent = percent(baseline);
+
+  let html = `<thead><tr><th class="axis-title"></th><th class="axis-title" colspan="${c.labels.length}">Predicted</th></tr>`
+    + `<tr><th class="axis-title row">Expected</th>${c.labels.map((l) => `<th>${l}</th>`).join("")}</tr></thead><tbody>`;
+  c.counts.forEach((row, i) => {
+    html += `<tr><th class="row">${c.labels[i]}</th>`;
+    row.forEach((count, j) => {
+      const share = rows[i].support ? count / rows[i].support : 0;
+      const shade = Math.round(share * 85);
+      const light = share > 0.55;
+      html += `<td style="background:color-mix(in srgb, var(--training) ${shade}%, var(--card));`
+        + `color:${light ? "#fff" : "var(--text)"}" title="Expected ${c.labels[i]}, predicted ${c.labels[j]}: ${count}">${count}</td>`;
+    });
+    html += `</tr>`;
+  });
+  $("matrix").innerHTML = html + `</tbody>`;
+
+  $("classes").innerHTML = `<thead><tr><th>Label</th><th>Samples</th><th>Precision</th><th>Recall</th><th>F1</th></tr></thead><tbody>`
+    + rows.map((r, i) => `<tr><td>${c.labels[i]}</td><td>${r.support}</td><td>${percent(r.precision)}</td>`
+      + `<td>${percent(r.recall)}</td><td>${r.support ? percent(r.f1) : "–"}</td></tr>`).join("") + `</tbody>`;
+}
+
 function render() {
   const points = data.points;
   const last = points[points.length - 1];
@@ -264,6 +333,7 @@ function render() {
   const best = rated.reduce((a, p) => (a === null || p.validation_loss < a.validation_loss ? p : a), null);
   $("t-best").textContent = best ? best.epoch : "–";
   charts.forEach(draw);
+  renderConfusion();
   if ($("table-view").open) {
     $("rows").innerHTML = [...points].reverse().map((p) =>
       `<tr><td>${p.epoch}</td><td>${loss(p.training_loss)}</td><td>${loss(p.validation_loss)}</td>`
