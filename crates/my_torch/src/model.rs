@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::activations::Activation;
 use crate::dataset::Dataset;
 use crate::dense::Dense;
+use crate::epoch_report::EpochReport;
 use crate::history::History;
 use crate::matrix::{Matrix, Scalar};
 use crate::network::Network;
@@ -67,6 +68,16 @@ impl Model {
     pub fn train(&mut self, data: &Dataset) -> Result<History, String> {
         self.trainer
             .fit(&mut self.network, data, &mut Rng::new(self.seed))
+    }
+
+    /// Like `train`, and calls `observer` at the end of every epoch. See `Trainer::fit_observed`.
+    pub fn train_observed(
+        &mut self,
+        data: &Dataset,
+        observer: impl FnMut(&EpochReport),
+    ) -> Result<History, String> {
+        self.trainer
+            .fit_observed(&mut self.network, data, &mut Rng::new(self.seed), observer)
     }
 
     pub fn save(&self, path: impl AsRef<Path>) -> Result<(), String> {
