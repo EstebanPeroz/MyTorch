@@ -168,6 +168,24 @@ fn predict_prints_one_label_per_chessboard_in_order() {
 }
 
 #[test]
+fn predict_ends_quietly_when_the_reader_closes_the_pipe() {
+    let network = tiny_network("pipe.nn");
+    let chess_file = temporary("pipe.txt");
+    let line = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1\n";
+    fs::write(&chess_file, line.repeat(20_000)).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_my_torch_analyzer"))
+        .args(["--predict", path(&network), path(&chess_file)])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(child.stdout.take());
+    let outcome = child.wait_with_output().unwrap();
+    assert_eq!(outcome.status.code(), Some(0));
+    assert_eq!(String::from_utf8_lossy(&outcome.stderr), "");
+}
+
+#[test]
 fn predict_never_gives_the_color_of_the_side_to_move() {
     let network = tiny_network("colors.nn");
     let outcome = analyzer().run(&["--predict", path(&network), UNLABELED]);

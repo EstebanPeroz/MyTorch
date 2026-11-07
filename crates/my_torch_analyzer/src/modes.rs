@@ -1,3 +1,4 @@
+use std::io::{self, BufWriter, ErrorKind, Write};
 use std::path::Path;
 
 use my_torch::{Dataset, EpochReport, History, Model, Scalar};
@@ -11,10 +12,21 @@ pub fn predict(load_file: &Path, chess_file: &Path) -> Result<(), String> {
     let file = ChessFile::read(chess_file, Labels::Optional)?;
     let model = load(load_file)?;
     let labels = encoding::predict(model.network(), file.samples())?;
-    for label in labels {
-        println!("{label}");
+    print_lines(&labels)
+}
+
+/// Writes one line per item. A reader that stops early (`… | head -n 5`) is not an error: `println!` would panic
+/// there, so the output is written by hand and a closed pipe ends the program quietly.
+fn print_lines<T: std::fmt::Display>(items: &[T]) -> Result<(), String> {
+    let mut out = BufWriter::new(io::stdout().lock());
+    let written = items
+        .iter()
+        .try_for_each(|item| writeln!(out, "{item}"))
+        .and_then(|()| out.flush());
+    match written {
+        Err(error) if error.kind() != ErrorKind::BrokenPipe => Err(format!("error: {error}")),
+        _ => Ok(()),
     }
-    Ok(())
 }
 
 /// Prints what a network file holds. It is not tied to chess, so the network's shape is not checked.
