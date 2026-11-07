@@ -11,7 +11,7 @@ use crate::trainer::Trainer;
 use crate::training_file::TrainingFile;
 
 const MAGIC: [u8; 4] = *b"MTNN";
-pub(crate) const FORMAT_VERSION: u32 = 1;
+pub(crate) const FORMAT_VERSION: u32 = 2;
 const SCALAR_SIZE: usize = size_of::<Scalar>();
 
 pub(crate) fn encode(layers: &[Dense], trainer: &Trainer, seed: u64) -> Result<Vec<u8>, String> {
@@ -57,6 +57,7 @@ fn encode_layer(out: &mut Vec<u8>, layer: &Dense) -> Result<(), String> {
     for value in parameters {
         put_scalar(out, *value);
     }
+    put_scalar(out, layer.dropout());
     Ok(())
 }
 
@@ -67,7 +68,8 @@ pub(crate) fn decode(bytes: &[u8]) -> Result<Model, String> {
         return Err("not a network file (wrong header)".into());
     }
     let version = reader.u32("the version")?;
-    if version != FORMAT_VERSION {
+    // Version 1 has no dropout: its layers read as layers without any.
+    if version != FORMAT_VERSION && version != 1 {
         return Err(format!(
             "unsupported network file version {version}, expected {FORMAT_VERSION}"
         ));
@@ -75,8 +77,8 @@ pub(crate) fn decode(bytes: &[u8]) -> Result<Model, String> {
     let count = reader.u32("the number of layers")? as usize;
     let mut layers = Vec::new();
     for index in 0..count {
-        let layer =
-            decode_layer(&mut reader).map_err(|error| format!("layer {}: {error}", index + 1))?;
+        let layer = decode_layer(&mut reader, version)
+            .map_err(|error| format!("layer {}: {error}", index + 1))?;
         layers.push(layer);
     }
     let loss = reader.string("the loss")?;
@@ -120,17 +122,23 @@ pub(crate) fn decode(bytes: &[u8]) -> Result<Model, String> {
     Model::new(Network::new(layers)?, training.trainer()?, seed)
 }
 
-fn decode_layer(reader: &mut Reader) -> Result<Dense, String> {
+fn decode_layer(reader: &mut Reader, version: u32) -> Result<Dense, String> {
     let activation = Activation::from_name(&reader.string("an activation")?)?;
     let inputs = reader.u32("the number of inputs")? as usize;
     let outputs = reader.u32("the number of neurons")? as usize;
     let weights = reader.scalars(inputs, outputs, "the weights")?;
     let biases = reader.scalars(1, outputs, "the biases")?;
+    let dropout = if version >= 2 {
+        reader.scalar("the dropout rate")?
+    } else {
+        0.0
+    };
     let layer = Dense::new(
         Matrix::from_vec(inputs, outputs, weights)?,
         Matrix::from_vec(1, outputs, biases)?,
         activation,
-    )?;
+    )?
+    .with_dropout(dropout)?;
     let parameters = layer.weights().data().iter().chain(layer.biases().data());
     if parameters.into_iter().any(|value| !value.is_finite()) {
         return Err("a weight or bias is not a finite number".into());
