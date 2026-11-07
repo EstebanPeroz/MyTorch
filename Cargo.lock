@@ -288,6 +288,7 @@ dependencies = [
  "cli_core",
  "cli_test",
  "my_torch",
+ "rayon",
  "serde_json",
 ]
 
