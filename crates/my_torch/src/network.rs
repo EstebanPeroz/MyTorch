@@ -1,6 +1,7 @@
 use crate::dense::{Dense, DenseGradients};
 use crate::losses::Loss;
 use crate::matrix::{Matrix, Scalar};
+use crate::rng::Rng;
 use rayon::prelude::*;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -29,7 +30,14 @@ impl Network {
                 ));
             }
         }
+        if layers[layers.len() - 1].dropout() != 0.0 {
+            return Err("the output layer cannot have dropout".into());
+        }
         Ok(Network { layers })
+    }
+
+    pub fn has_dropout(&self) -> bool {
+        self.layers.iter().any(|layer| layer.dropout() != 0.0)
     }
 
     pub fn input_size(&self) -> usize {
@@ -62,12 +70,24 @@ impl Network {
         targets: &Matrix,
         loss: &dyn Loss,
     ) -> Result<(Scalar, Gradients), String> {
+        self.gradients_with_dropout(inputs, targets, loss, &mut Rng::new(0))
+    }
+
+    /// Like `gradients`, with the dropout of the layers that have some, drawn from `rng`. Without dropout
+    /// in any layer it is the same as `gradients`, and draws nothing.
+    pub fn gradients_with_dropout(
+        &self,
+        inputs: &Matrix,
+        targets: &Matrix,
+        loss: &dyn Loss,
+        rng: &mut Rng,
+    ) -> Result<(Scalar, Gradients), String> {
         self.check_inputs(inputs)?;
         self.check_targets(inputs, targets)?;
         let mut values = inputs.clone();
         let mut caches = Vec::with_capacity(self.layers.len());
         for layer in &self.layers {
-            let (output, cache) = layer.forward_cached(&values);
+            let (output, cache) = layer.forward_training(&values, rng);
             caches.push(cache);
             values = output;
         }
@@ -90,18 +110,20 @@ impl Network {
 
     /// Same result as `gradients` (up to float summation order), computed on
     /// shards of `shard_rows` rows in parallel. The shards only depend on
-    /// `shard_rows`, never on the number of cores, so the result is reproducible.
+    /// `shard_rows`, never on the number of cores, so the result is reproducible. The dropout of
+    /// shard `i` is drawn from a generator seeded by `dropout_seed` and `i`, for the same reason.
     pub fn gradients_sharded(
         &self,
         inputs: &Matrix,
         targets: &Matrix,
         loss: &dyn Loss,
         shard_rows: usize,
+        dropout_seed: u64,
     ) -> Result<(Scalar, Gradients), String> {
         assert!(shard_rows > 0, "a shard needs at least one row");
         let rows = inputs.rows();
         if rows <= shard_rows {
-            return self.gradients(inputs, targets, loss);
+            return self.gradients_with_dropout(inputs, targets, loss, &mut Rng::new(dropout_seed));
         }
         self.check_inputs(inputs)?;
         self.check_targets(inputs, targets)?;
@@ -109,13 +131,15 @@ impl Network {
             .step_by(shard_rows)
             .map(|start| (start, (start + shard_rows).min(rows)))
             .collect();
-        let results: Vec<Result<(Scalar, Gradients), String>> = ranges
+        let shards: Vec<(usize, &(usize, usize))> = ranges.iter().enumerate().collect();
+        let results: Vec<Result<(Scalar, Gradients), String>> = shards
             .par_iter()
             .with_max_len(1)
-            .map(|&(start, end)| {
+            .map(|&(index, &(start, end))| {
                 let shard_inputs = inputs.slice_rows(start, end);
                 let shard_targets = targets.slice_rows(start, end);
-                self.gradients(&shard_inputs, &shard_targets, loss)
+                let mut rng = Rng::new(dropout_seed.wrapping_add(index as u64 + 1));
+                self.gradients_with_dropout(&shard_inputs, &shard_targets, loss, &mut rng)
             })
             .collect();
         let mut total = 0.0;
@@ -435,7 +459,7 @@ mod tests {
             .unwrap();
         for shard_rows in [1, 5, 16, 36, 37, 100] {
             let (sharded_value, sharded) = network
-                .gradients_sharded(&inputs, &targets, &SoftmaxCrossEntropy, shard_rows)
+                .gradients_sharded(&inputs, &targets, &SoftmaxCrossEntropy, shard_rows, 0)
                 .unwrap();
             assert!((value - sharded_value).abs() < 1e-5, "{shard_rows}");
             for (a, b) in plain.layers().iter().zip(sharded.layers()) {
@@ -479,5 +503,66 @@ mod tests {
             )
             .unwrap();
         small.clone().update(&gradients, |parameter, _| parameter);
+    }
+
+    fn with_dropout(network: &Network, rates: &[Scalar]) -> Result<Network, String> {
+        let layers = network
+            .layers()
+            .iter()
+            .zip(rates)
+            .map(|(layer, &rate)| layer.clone().with_dropout(rate).unwrap())
+            .collect();
+        Network::new(layers)
+    }
+
+    #[test]
+    fn the_output_layer_cannot_have_dropout() {
+        let plain = network(3, &[(4, Activation::Tanh), (2, Activation::Identity)], 41);
+        assert_eq!(
+            with_dropout(&plain, &[0.0, 0.5]),
+            Err("the output layer cannot have dropout".to_string())
+        );
+        assert!(!plain.has_dropout());
+        assert!(with_dropout(&plain, &[0.5, 0.0]).unwrap().has_dropout());
+    }
+
+    #[test]
+    fn dropout_changes_the_gradients_but_not_the_predictions() {
+        let mut rng = Rng::new(42);
+        let inputs = random_matrix(8, 3, &mut rng);
+        let targets = one_hot(8, 2, &mut rng);
+        let plain = network(3, &[(16, Activation::Tanh), (2, Activation::Identity)], 43);
+        let dropping = with_dropout(&plain, &[0.5, 0.0]).unwrap();
+        assert_eq!(dropping.predict(&inputs), plain.predict(&inputs));
+        let gradients = |network: &Network, seed| {
+            network
+                .gradients_with_dropout(
+                    &inputs,
+                    &targets,
+                    &SoftmaxCrossEntropy,
+                    &mut Rng::new(seed),
+                )
+                .unwrap()
+        };
+        assert_eq!(gradients(&dropping, 1), gradients(&dropping, 1));
+        assert_ne!(gradients(&dropping, 1), gradients(&dropping, 2));
+        assert_ne!(gradients(&dropping, 1).1, gradients(&plain, 1).1);
+        assert_eq!(gradients(&plain, 1), gradients(&plain, 2));
+    }
+
+    #[test]
+    fn sharded_dropout_is_reproducible() {
+        let mut rng = Rng::new(44);
+        let inputs = random_matrix(37, 3, &mut rng);
+        let targets = one_hot(37, 2, &mut rng);
+        let plain = network(3, &[(16, Activation::Tanh), (2, Activation::Identity)], 45);
+        let dropping = with_dropout(&plain, &[0.5, 0.0]).unwrap();
+        let run = |seed| {
+            dropping
+                .gradients_sharded(&inputs, &targets, &SoftmaxCrossEntropy, 5, seed)
+                .unwrap()
+        };
+        assert_eq!(run(1), run(1));
+        assert_ne!(run(1), run(2));
     }
 }
