@@ -109,8 +109,8 @@ impl Dense {
     }
 
     pub fn update(&mut self, gradients: &DenseGradients, rule: impl Fn(Scalar, Scalar) -> Scalar) {
-        self.weights = self.weights.zip_map(&gradients.weights, &rule);
-        self.biases = self.biases.zip_map(&gradients.biases, &rule);
+        self.weights.zip_apply(&gradients.weights, &rule);
+        self.biases.zip_apply(&gradients.biases, &rule);
     }
 
     fn weighted_sum(&self, input: &Matrix) -> Matrix {
@@ -125,6 +125,17 @@ impl Dense {
 }
 
 impl DenseGradients {
+    pub(crate) fn scale(&mut self, factor: Scalar) {
+        self.weights.apply(|g| g * factor);
+        self.biases.apply(|g| g * factor);
+    }
+
+    pub(crate) fn add_scaled(&mut self, other: &DenseGradients, factor: Scalar) {
+        self.weights
+            .zip_apply(&other.weights, |a, b| a + factor * b);
+        self.biases.zip_apply(&other.biases, |a, b| a + factor * b);
+    }
+
     pub fn weights(&self) -> &Matrix {
         &self.weights
     }
