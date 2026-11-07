@@ -46,9 +46,11 @@ Each rule is tested in detail in one place only:
   gives exactly the best validation loss.
 - **Configurations** are unit-tested in `model_config.rs`: the seed of each generated network, the training
   section written into its network file, and one broken configuration per kind of error.
-- **Network files** are unit-tested in `model.rs`: the exact JSON written for a small network, a save and load
-  that keeps every weight to the bit (including `f32::MAX` and the smallest numbers), the refusal to save NaN,
-  one broken file per kind of error, each derived from the valid file by changing one field, and a save that
+- **Network files** are unit-tested in `model.rs`: the exact bytes written for a small network (built by hand
+  in the test), a save and load that keeps every weight to the bit (including `f32::MAX` and the smallest
+  numbers), the refusal to save NaN, one broken file per kind of error (each derived from the valid bytes by
+  changing one part: wrong header or version, truncated file, a size too large for the file, unknown names,
+  NaN, invalid settings, bytes left over), layers that do not fit together, `describe()`, and a save that
   fails halfway (a folder blocks its temporary file) without touching the previous file.
 
 Unit tests share their FEN strings through the test-only module `crates/my_torch_analyzer/src/test_fens.rs`.

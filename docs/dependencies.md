@@ -2,7 +2,7 @@
 
 No neural network library (PyTorch, TensorFlow…) is used. Everything related to the network (layers,
 activations, losses, backpropagation, training) is written from scratch in `my_torch`. It uses `ndarray` for
-the matrix arithmetic, `rand` for random numbers and `serde_json` to save networks. The programs use two other
+the matrix arithmetic, `rand` for random numbers and `serde_json` to read configurations. The programs use two other
 external crates.
 
 | Crate | Version | Used by | Purpose |
@@ -13,7 +13,7 @@ external crates.
 | [rand](https://docs.rs/rand) | 0.10.3 | `my_torch` | seeded random numbers |
 | [rand_distr](https://docs.rs/rand_distr) | 0.6.0 | `my_torch` | the normal distribution |
 | [serde](https://serde.rs) | 1.0.229 | `my_torch` (network and configuration files only) | turning Rust structs into a file format and back |
-| [serde_json](https://docs.rs/serde_json) | 1.0.154 | `my_torch` (network and configuration files only) | the JSON format of network and configuration files |
+| [serde_json](https://docs.rs/serde_json) | 1.0.154 | `my_torch` (configuration files only) | the JSON format of configuration files |
 
 ## clap
 
@@ -103,27 +103,27 @@ are among them because `Cargo.lock` lists them, but they are never compiled.
 
 ## serde and serde_json
 
-Network files (`.nn`) are JSON, read and written with `serde_json`; `serde` derives the code that turns Rust
-structs into JSON and back. See [my_torch.md](my_torch.md#network-files) for the format.
+Configuration files (`.conf`) are JSON, read with `serde_json`; `serde` derives the code that turns JSON into
+Rust structs. Network files (`.nn`) do not use them: they are binary, written and read by hand in `model_file.rs`
+(see [my_torch.md](my_torch.md#network-files) for the format).
 
-| | JSON (`serde_json`) | Our own text format | Binary (`bincode`) |
+| | JSON (`serde_json`) | Binary written by hand | Binary (`bincode`) |
 |---|---|---|---|
-| Readable in an editor | yes | yes | no |
-| Parser to write and test | none | ours | none |
-| Weights read back exactly | yes | only if we print enough digits | yes |
-| Size for 100,000 weights | about 1.2 MB | about 1.2 MB | 400 KB |
-| Errors on a broken file | the field and its line and column | ours to write | little detail |
+| Readable in an editor | yes | no (`--dump` instead) | no |
+| Parser to write and test | none | ours, about 200 lines | none |
+| Weights read back exactly | yes | yes | yes |
+| Size for 100,000 weights | about 1.2 MB | 400 KB | 400 KB |
+| Errors on a broken file | the field and its line and column | ours: the part of the file that is wrong | little detail |
 
-JSON was chosen for being readable and for its precise error messages, at the cost of files about 3 times
-larger than binary ones, which still load in milliseconds.
+Network files are binary because they are about 3 times smaller (the trained network is committed, so every
+retrain adds a file to the history) and need no number parsing. They are written by hand rather than with
+`bincode` to get precise errors and to keep one more dependency out of the vendored sources.
 
 **What to know when using it:**
 
-- Only `model.rs`, `model_config.rs` and `training_file.rs` use `serde`: private structs (`ModelFile`,
-  `LayerFile`, `TrainingFile`…) describe the files, and are converted to and from `Model` and `ModelConfig`.
-  No public type derives `Serialize` or `Deserialize`, so `serde` stays out of the API.
-- `serde_json` writes each `f32` with the shortest text that reads back as the same `f32`, so weights survive a
-  save and load exactly. It writes NaN and infinity as `null`, which is why `save` refuses them.
+- Only `model_config.rs` and `training_file.rs` use `serde`: private structs (`ConfigFile`, `TrainingFile`…)
+  describe the configuration file, and are converted to `ModelConfig`. No public type derives `Deserialize`, so
+  `serde` stays out of the API.
 - `#[serde(deny_unknown_fields)]` turns a misspelled field into an error. It does not work together with
   `#[serde(flatten)]`, which the optimizer settings use: an unknown optimizer setting is refused by
   `optimizer_from_settings` instead.
