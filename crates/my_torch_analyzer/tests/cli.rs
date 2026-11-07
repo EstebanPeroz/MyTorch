@@ -67,6 +67,14 @@ fn invalid_arguments_exit_with_84() {
             &["--dashboard", "net.nn", "boards.txt"],
             "the following required arguments were not provided",
         ),
+        (
+            &["--predict", "--mirror", "net.nn", "boards.txt"],
+            "the argument '--predict' cannot be used with '--mirror'",
+        ),
+        (
+            &["--mirror", "net.nn", "boards.txt"],
+            "the following required arguments were not provided",
+        ),
     ]);
 }
 
@@ -168,6 +176,32 @@ fn train_with_save_leaves_the_load_file_untouched() {
     assert_eq!(outcome.code(), Some(0), "{outcome}");
     assert_eq!(fs::read_to_string(&network).unwrap(), before);
     assert_ne!(fs::read_to_string(&saved).unwrap(), before);
+}
+
+#[test]
+fn mirroring_trains_on_the_mirror_of_every_chessboard_and_nothing_else_changes() {
+    let plain = tiny_network("unmirrored.nn");
+    let mirrored = tiny_network("mirrored.nn");
+    let outcome = analyzer().run(&["--train", path(&plain), LABELED]);
+    assert_eq!(outcome.code(), Some(0), "{outcome}");
+    assert!(outcome.stdout().contains("training on 3 chessboards"));
+    assert!(!outcome.stdout().contains("mirror"), "{outcome}");
+
+    let outcome = analyzer().run(&["--train", "--mirror", path(&mirrored), LABELED]);
+    assert_eq!(outcome.code(), Some(0), "{outcome}");
+    assert!(outcome.stdout().contains("training on 3 chessboards"));
+    assert!(
+        outcome
+            .stdout()
+            .contains("training on 3 more chessboards, the mirror of each one"),
+        "{outcome}"
+    );
+    assert!(outcome.stdout().contains("accuracy: "), "{outcome}");
+    assert!(Model::load(&mirrored).is_ok());
+    assert_ne!(
+        fs::read_to_string(&mirrored).unwrap(),
+        fs::read_to_string(&plain).unwrap()
+    );
 }
 
 #[test]

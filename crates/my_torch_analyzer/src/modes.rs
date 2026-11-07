@@ -17,11 +17,18 @@ pub fn predict(load_file: &Path, chess_file: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// The optional extras of a training, none of which is in the help text.
+#[derive(Debug, Clone, Copy)]
+pub struct Options {
+    pub dashboard: bool,
+    pub mirror: bool,
+}
+
 pub fn train(
     load_file: &Path,
     chess_file: &Path,
     save_file: &Path,
-    dashboard: bool,
+    options: Options,
 ) -> Result<(), String> {
     let file = ChessFile::read(chess_file, Labels::Required)?;
     let mut model = load(load_file)?;
@@ -37,8 +44,20 @@ pub fn train(
         samples.len(),
         file.samples().len() - samples.len()
     );
-    let dataset = encoding::dataset(&samples)?;
-    let history = if dashboard {
+    let (samples, dataset) = if options.mirror {
+        let before = samples.len();
+        let (samples, groups) = encoding::with_mirrors(samples);
+        println!(
+            "training on {} more chessboards, the mirror of each one",
+            samples.len() - before
+        );
+        let dataset = encoding::grouped_dataset(&samples, groups)?;
+        (samples, dataset)
+    } else {
+        let dataset = encoding::dataset(&samples)?;
+        (samples, dataset)
+    };
+    let history = if options.dashboard {
         train_watched(&mut model, &dataset, &samples)?
     } else {
         model.train(&dataset)

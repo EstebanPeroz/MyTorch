@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use rand::seq::SliceRandom;
 
 use crate::matrix::Scalar;
@@ -59,6 +61,47 @@ impl EarlyStopping {
     }
 }
 
+impl EarlyStopping {
+    /// Like `split`, but samples with the same group number always end up on the same side. The validation
+    /// set takes whole groups until it holds at least its share of the samples, so it can be a little larger.
+    pub(crate) fn split_groups(
+        &self,
+        groups: &[usize],
+        rng: &mut Rng,
+    ) -> Result<(Vec<usize>, Vec<usize>), String> {
+        let count = groups.len();
+        let wanted = (count as Scalar * self.validation).round() as usize;
+        let mut members: Vec<(usize, Vec<usize>)> = Vec::new();
+        let mut position = HashMap::new();
+        for (row, &group) in groups.iter().enumerate() {
+            let index = *position.entry(group).or_insert_with(|| {
+                members.push((group, Vec::new()));
+                members.len() - 1
+            });
+            members[index].1.push(row);
+        }
+        members.shuffle(rng.generator());
+        let mut validation = Vec::new();
+        let mut taken = 0;
+        while validation.len() < wanted.max(1) && taken < members.len() {
+            validation.extend(&members[taken].1);
+            taken += 1;
+        }
+        let training: Vec<usize> = members[taken..]
+            .iter()
+            .flat_map(|(_, rows)| rows.iter().copied())
+            .collect();
+        if wanted == 0 || training.is_empty() {
+            return Err(format!(
+                "{count} samples in {} groups are too few to set aside {} of them for validation",
+                members.len(),
+                self.validation
+            ));
+        }
+        Ok((training, validation))
+    }
+}
+
 impl Watch {
     pub(crate) fn new(patience: usize) -> Watch {
         Watch {
@@ -93,6 +136,7 @@ mod tests {
     use crate::activations::Activation;
     use crate::dense::Dense;
     use crate::matrix::Matrix;
+    use std::collections::HashSet;
 
     fn network(weight: Scalar) -> Network {
         let layer = Dense::new(
@@ -149,6 +193,50 @@ mod tests {
         );
         let (_, other) = early_stopping.split(10, &mut Rng::new(2)).unwrap();
         assert_ne!(other, validation);
+    }
+
+    #[test]
+    fn a_split_by_groups_never_separates_a_group() {
+        let early_stopping = EarlyStopping::new(0.25, 3).unwrap();
+        // 10 groups of 2 samples: sample `row` is in group `row % 10`.
+        let groups: Vec<usize> = (0..20).map(|row| row % 10).collect();
+        let (training, validation) = early_stopping
+            .split_groups(&groups, &mut Rng::new(1))
+            .unwrap();
+        // 25% of 20 samples is 5: three whole groups, which is 6 samples.
+        assert_eq!((training.len(), validation.len()), (14, 6));
+        let groups_of =
+            |rows: &[usize]| -> HashSet<usize> { rows.iter().map(|&r| groups[r]).collect() };
+        assert!(groups_of(&training).is_disjoint(&groups_of(&validation)));
+        let mut all: Vec<usize> = training.iter().chain(&validation).copied().collect();
+        all.sort();
+        assert_eq!(all, (0..20).collect::<Vec<_>>());
+        assert_eq!(
+            early_stopping.split_groups(&groups, &mut Rng::new(1)),
+            Ok((training, validation.clone()))
+        );
+        let (_, other) = early_stopping
+            .split_groups(&groups, &mut Rng::new(2))
+            .unwrap();
+        assert_ne!(other, validation);
+    }
+
+    #[test]
+    fn refuses_to_split_too_few_groups() {
+        let early_stopping = EarlyStopping::new(0.5, 3).unwrap();
+        assert_eq!(
+            early_stopping.split_groups(&[0, 0, 0, 0], &mut Rng::new(1)),
+            Err(
+                "4 samples in 1 groups are too few to set aside 0.5 of them for validation"
+                    .to_string()
+            )
+        );
+        assert!(
+            EarlyStopping::new(0.1, 3)
+                .unwrap()
+                .split_groups(&[0, 1, 2, 3], &mut Rng::new(1))
+                .is_err()
+        );
     }
 
     #[test]
