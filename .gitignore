@@ -34,3 +34,6 @@ rustc-ice-*.txt
 !/my_torch_network*.nn
 /dataset/
 /.train
+/my_torch_tuner
+/tuner_log.jsonl
+/best.conf

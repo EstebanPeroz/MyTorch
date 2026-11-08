@@ -29,7 +29,7 @@ make
 
 | Target | Effect |
 |---|---|
-| `make` | builds `my_torch_analyzer` and `my_torch_generator` in release mode and copies them to the repo root |
+| `make` | builds `my_torch_analyzer`, `my_torch_generator` and `my_torch_tuner` in release mode and copies them to the repo root |
 | `make train` | generates a blank network from `CONFIG` (default `configs/chess.conf`) and trains it on `DATASET` (default `dataset/full.txt`, see [docs/dataset.md](docs/dataset.md)) with `--mirror` and `--dashboard`, then saves it as `NETWORK` (default `my_torch_network.nn`) |
 | `make clean` | removes the build directory (`target/`) |
 | `make fclean` | `clean`, then removes both binaries |
@@ -128,6 +128,18 @@ training settings. See [docs/my_torch.md](docs/my_torch.md#configurations).
 }
 ```
 
+### my_torch_tuner
+
+Searches the hyperparameters (learning rate, batch size, dropout, activation, hidden layer widths) with a random
+search and successive halving, scoring short trainings on a validation split, and writes the best configuration
+as a `.conf` file for `my_torch_generator`. It is an extra program, see
+[docs/hyperparameter-optimization.md](docs/hyperparameter-optimization.md).
+
+```sh
+./my_torch_tuner configs/chess.conf configs/search_space.json dataset/slim.txt   # writes best.conf and tuner_log.jsonl
+./my_torch_generator best.conf 1
+```
+
 ## Repository layout
 
 ```
@@ -136,6 +148,7 @@ crates/
 ├── cli_core/             shared command-line handling: parsing, --help, exit code 84
 ├── my_torch_analyzer/    the chess analyzer (library for chess logic + thin binary)
 ├── my_torch_generator/   generates blank networks from configuration files
+├── my_torch_tuner/       hyperparameter search (random search + successive halving)
 └── cli_test/             dev-only helpers for end-to-end tests
 docs/                     technical documentation
 vendor/                   vendored dependencies
