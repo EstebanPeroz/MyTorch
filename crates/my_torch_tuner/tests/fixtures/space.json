@@ -1,0 +1,7 @@
+{
+  "learning_rate": { "log_uniform": [0.005, 0.2] },
+  "batch_size": { "choices": [8, 16] },
+  "dropout": { "uniform": [0.0, 0.3] },
+  "activation": { "choices": ["relu", "tanh"] },
+  "hidden": { "choices": [[16], [8, 8]] }
+}

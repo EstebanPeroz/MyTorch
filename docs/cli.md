@@ -109,6 +109,24 @@ that is always set.
 **A mode is required.** The usage line shows the mode in brackets (`[--predict | --train …]`), which reads as
 optional, but neither mode is a sensible default. Running without a mode is therefore an error.
 
+## my_torch_tuner
+
+```
+./my_torch_tuner [--trials N] [--rounds N] [--epochs N] [--samples N] [--validation F] [--seed N]
+                 [--log FILE] [--output FILE] BASE_CONFIG SEARCH_SPACE CHESSFILE
+```
+
+An extra program (the subject does not ask for it), with its own `help.txt`. It follows the shared behavior
+above. What it does and what each option means is in [hyperparameter-optimization.md](hyperparameter-optimization.md).
+
+| Rule | Example | Result |
+|---|---|---|
+| The three files are required, nothing else | `base.conf space.json` | error |
+| Counts are whole numbers >= 1 | `--trials 0`, `--rounds two`, `--samples -1` | error |
+| The validation share is strictly between 0 and 1 | `--validation 1` | error |
+| An option cannot be repeated | `--trials 3 --trials 4` | error |
+| A broken search space is refused before any training | unknown hyperparameter, empty range, unknown activation | `error: space.json: …`, exit code 84 |
+
 ## my_torch_generator
 
 ```

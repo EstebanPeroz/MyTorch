@@ -1,0 +1,23 @@
+USAGE
+        ./my_torch_tuner [OPTIONS] BASE_CONFIG SEARCH_SPACE CHESSFILE
+
+DESCRIPTION
+        Searches the hyperparameters of a network (learning rate, batch size, dropout, activation,
+hidden layer widths) with a random search followed by successive halving. Every trial trains a
+network from BASE_CONFIG, changed as SEARCH_SPACE says, on a short budget, and is scored on a
+validation split of CHESSFILE. The best configuration is written as a file for my_torch_generator.
+
+        --trials N       Networks tried in the first round (default 12).
+        --rounds N       Rounds of halving (default 3). With 1, this is a plain random search.
+Each round keeps the better half of the trials and doubles their epochs.
+        --epochs N       Epochs of the first round (default 5).
+        --samples N      Use at most N chessboards, picked at random (default: all).
+        --validation F   Share of the chessboards held out to score the trials (default 0.2).
+        --seed N         Seed of the search (default: the seed of BASE_CONFIG).
+        --log FILE       Where each trial is logged, one JSON object per line
+(default tuner_log.jsonl).
+        --output FILE    Where the best configuration is written (default best.conf).
+
+        BASE_CONFIG      Configuration file the trials start from (see my_torch_generator).
+        SEARCH_SPACE     JSON file telling which hyperparameters to search, and in what range.
+        CHESSFILE        File containing labeled chessboards.

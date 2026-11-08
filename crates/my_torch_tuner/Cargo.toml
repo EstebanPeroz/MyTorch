@@ -1,0 +1,16 @@
+[package]
+name = "my_torch_tuner"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+clap.workspace = true
+cli_core.workspace = true
+my_torch.workspace = true
+my_torch_analyzer.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+cli_test.workspace = true

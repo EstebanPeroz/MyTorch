@@ -7,6 +7,7 @@ is in the [main README](../README.md).
 |---|---|
 | [architecture.md](architecture.md) | Workspace crates, how they depend on each other, design rules, error handling, current status |
 | [cli.md](cli.md) | Command-line behavior of both programs: arguments, validation rules, exit codes, help |
+| [hyperparameter-optimization.md](hyperparameter-optimization.md) | `my_torch_tuner`: random search with successive halving over learning rate, batch size, dropout, activation and layer widths; the search space file, the log, results on `slim.txt` |
 | [mirror.md](mirror.md) | The optional `--mirror` training: what a mirrored chessboard is, why it helps, how it is kept out of the validation set |
 | [dashboard.md](dashboard.md) | The optional `--dashboard` page that follows a training live: what it shows, how it works, its limits |
 | [labels.md](labels.md) | The outputs the network predicts: classes, colors, text format, class indices |
