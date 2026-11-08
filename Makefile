@@ -1,4 +1,4 @@
-BINS := my_torch_analyzer my_torch_generator
+BINS := my_torch_analyzer my_torch_generator my_torch_tuner
 
 CONFIG ?= configs/chess.conf
 DATASET ?= dataset/full.txt
@@ -24,7 +24,7 @@ clean:
 	cargo clean
 
 fclean: clean
-	rm -f $(BINS)
+	rm -rf $(BINS) .train
 
 re: fclean all
 

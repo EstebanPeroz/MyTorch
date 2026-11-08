@@ -5,7 +5,8 @@ predict the state of a chess game (check, checkmate, stalemate or nothing) from 
 [FEN](https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation) notation.
 
 > **Status:** the analyzer (`--train` and `--predict`) and the generator work, and a trained
-> `my_torch_network.nn` is in the repository. The benchmarks are still to be produced.
+> `my_torch_network.nn` is in the repository. The benchmarks, with learning curves and confusion matrices, are in
+> [docs/benchmarks.md](docs/benchmarks.md).
 
 A chessboard is given to the network as 769 inputs (12 piece planes of 64 squares, plus the side to move) and the
 network has 6 outputs, one per label. `configs/chess.conf` is the configuration of the network to train:
@@ -29,7 +30,7 @@ make
 
 | Target | Effect |
 |---|---|
-| `make` | builds `my_torch_analyzer` and `my_torch_generator` in release mode and copies them to the repo root |
+| `make` | builds `my_torch_analyzer`, `my_torch_generator` and `my_torch_tuner` in release mode and copies them to the repo root |
 | `make train` | generates a blank network from `CONFIG` (default `configs/chess.conf`) and trains it on `DATASET` (default `dataset/full.txt`, see [docs/dataset.md](docs/dataset.md)) with `--mirror` and `--dashboard`, then saves it as `NETWORK` (default `my_torch_network.nn`) |
 | `make clean` | removes the build directory (`target/`) |
 | `make fclean` | `clean`, then removes both binaries |
@@ -108,24 +109,39 @@ generate.
 ```
 
 A configuration file is JSON: the number of inputs, each layer (neurons, activation, initialization) and the
-training settings. See [docs/my_torch.md](docs/my_torch.md#configurations).
+training settings. See [docs/my_torch.md](docs/my_torch.md#configurations). This is `configs/chess.conf`; the
+reason for each value is in [docs/design-choices.md](docs/design-choices.md).
 
 ```json
 {
-  "inputs": 768,
+  "inputs": 769,
   "layers": [
-    { "neurons": 128, "activation": "relu", "initialization": "he_normal" },
+    { "neurons": 512, "activation": "relu", "initialization": "he_normal", "dropout": 0.2 },
+    { "neurons": 256, "activation": "relu", "initialization": "he_normal", "dropout": 0.2 },
+    { "neurons": 64, "activation": "relu", "initialization": "he_normal" },
     { "neurons": 6, "activation": "identity", "initialization": "xavier_normal" }
   ],
   "training": {
     "loss": "softmax_cross_entropy",
-    "optimizer": { "name": "sgd", "learning_rate": 0.1 },
-    "batch_size": 512,
+    "optimizer": { "name": "sgd", "learning_rate": 0.05 },
+    "batch_size": 128,
     "epochs": 100,
     "seed": 42,
     "early_stopping": { "validation": 0.1, "patience": 5 }
   }
 }
+```
+
+### my_torch_tuner
+
+Searches the hyperparameters (learning rate, batch size, dropout, activation, hidden layer widths) with a random
+search and successive halving, scoring short trainings on a validation split, and writes the best configuration
+as a `.conf` file for `my_torch_generator`. It is an extra program, see
+[docs/hyperparameter-optimization.md](docs/hyperparameter-optimization.md).
+
+```sh
+./my_torch_tuner configs/chess.conf configs/search_space.json dataset/slim.txt   # writes best.conf and tuner_log.jsonl
+./my_torch_generator best.conf 1
 ```
 
 ## Repository layout
@@ -136,6 +152,7 @@ crates/
 ├── cli_core/             shared command-line handling: parsing, --help, exit code 84
 ├── my_torch_analyzer/    the chess analyzer (library for chess logic + thin binary)
 ├── my_torch_generator/   generates blank networks from configuration files
+├── my_torch_tuner/       hyperparameter search (random search + successive halving)
 └── cli_test/             dev-only helpers for end-to-end tests
 docs/                     technical documentation
 vendor/                   vendored dependencies
