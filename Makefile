@@ -24,7 +24,7 @@ clean:
 	cargo clean
 
 fclean: clean
-	rm -f $(BINS)
+	rm -rf $(BINS) .train
 
 re: fclean all
 
