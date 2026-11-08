@@ -5,7 +5,8 @@ predict the state of a chess game (check, checkmate, stalemate or nothing) from 
 [FEN](https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation) notation.
 
 > **Status:** the analyzer (`--train` and `--predict`) and the generator work, and a trained
-> `my_torch_network.nn` is in the repository. The benchmarks are still to be produced.
+> `my_torch_network.nn` is in the repository. The benchmarks, with learning curves and confusion matrices, are in
+> [docs/benchmarks.md](docs/benchmarks.md).
 
 A chessboard is given to the network as 769 inputs (12 piece planes of 64 squares, plus the side to move) and the
 network has 6 outputs, one per label. `configs/chess.conf` is the configuration of the network to train:
