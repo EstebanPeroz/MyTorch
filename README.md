@@ -108,19 +108,22 @@ generate.
 ```
 
 A configuration file is JSON: the number of inputs, each layer (neurons, activation, initialization) and the
-training settings. See [docs/my_torch.md](docs/my_torch.md#configurations).
+training settings. See [docs/my_torch.md](docs/my_torch.md#configurations). This is `configs/chess.conf`; the
+reason for each value is in [docs/design-choices.md](docs/design-choices.md).
 
 ```json
 {
-  "inputs": 768,
+  "inputs": 769,
   "layers": [
-    { "neurons": 128, "activation": "relu", "initialization": "he_normal" },
+    { "neurons": 512, "activation": "relu", "initialization": "he_normal", "dropout": 0.2 },
+    { "neurons": 256, "activation": "relu", "initialization": "he_normal", "dropout": 0.2 },
+    { "neurons": 64, "activation": "relu", "initialization": "he_normal" },
     { "neurons": 6, "activation": "identity", "initialization": "xavier_normal" }
   ],
   "training": {
     "loss": "softmax_cross_entropy",
-    "optimizer": { "name": "sgd", "learning_rate": 0.1 },
-    "batch_size": 512,
+    "optimizer": { "name": "sgd", "learning_rate": 0.05 },
+    "batch_size": 128,
     "epochs": 100,
     "seed": 42,
     "early_stopping": { "validation": 0.1, "patience": 5 }
