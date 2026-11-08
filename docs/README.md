@@ -16,8 +16,9 @@ is in the [main README](../README.md).
 | [dataset.md](dataset.md) | The training data: layout, statistics, quality, open decisions |
 | [training-metrics.md](training-metrics.md) | Which metrics to follow while training, how to detect overfitting, levers to raise the accuracy |
 | [design-choices.md](design-choices.md) | Why each design choice and hyperparameter was made: input encoding, layers, activations, learning rate, dropout, early stopping, mirror; empirical vs. theoretical, with a quick ablation |
+| [benchmarks.md](benchmarks.md) | Measured results: learning curves, confusion matrix, per-class metrics, comparison of three configurations, and how to regenerate them |
 | [dependencies.md](dependencies.md) | External crates, why they were chosen, and how vendoring works |
 | [testing.md](testing.md) | Unit and end-to-end tests, the `cli_test` helpers, CI |
 
-Documents about the neural network itself (layers, training, file format) and the benchmarks will be added
+Documents about the neural network itself (layers, training, file format) will be added
 once that code exists.
